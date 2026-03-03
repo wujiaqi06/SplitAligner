@@ -31,7 +31,7 @@ A quiet ledger—where every absence has a name.
 ## Preprint
 
 **SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping**  
-bioRxiv (2026), Wu.
+bioRxiv (2026), Wu. https://doi.org/10.64898/2026.02.24.707838
 
 ---
 
