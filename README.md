@@ -9,8 +9,7 @@
 This repository hosts the source code, example commands, and scripts to reproduce the figures in the preprint.
 
 ---
-
-##
+## Introduction
 On a fixed species-tree spine,
 we ask one thing: does branch b still hold?
 
