@@ -10,6 +10,19 @@ This repository hosts the source code, example commands, and scripts to reproduc
 
 ---
 
+##
+On a fixed species-tree spine,
+we ask one thing: does branch b still hold?
+
+Project the split: σ_g(b).
+If it collapses — NA_struct.
+If branches fuse — Bs1|Bs3, NA_fuse.
+If topology turns away — NA_topo.
+
+No ghosts, no leaks:
+Total = Mapped + NA_struct + NA_fuse + NA_topo.
+A quiet ledger—where every absence has a name.
+
 ## Preprint
 
 **SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping**  
