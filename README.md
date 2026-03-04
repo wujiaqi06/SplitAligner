@@ -14,7 +14,7 @@ On a fixed species-tree spine,
 
 we ask one thing: does branch b still hold?
 
-Project the split: σ_g(b).
+Project the split:
 
 If it collapses — NA_struct.
 
