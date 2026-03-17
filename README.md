@@ -52,7 +52,7 @@ SplitAligner addresses this problem by:
 
 ## Repository structure
 
-```text
+```bash
 SplitAligner/
   SplitAligner.pl          # main controller
   README.md
@@ -193,14 +193,14 @@ Generate branch matrices from a species tree and a single gene-tree set.
 	-	--axis: species-axis label prefix (default: species_tree; useful for parallel runs)
 
 #### Example (free-topology gene trees)
-```text
+```bash
 SplitAligner.pl --mode matrix \
   --species input/speciesTree302.nwk \
   --gene input/free_tree.examples.nwk \
   --label free
 ```
 #### Example (fixed-topology gene trees)
-```text
+```bash
 SplitAligner.pl --mode matrix \
   --species input/speciesTree302.nwk \
   --gene input/fix_tree.examples.nwk \
@@ -227,7 +227,7 @@ Finalize will run:
 All executed commands are recorded in: commands.txt
 ```
 #### Example
-```text
+```bash
 SplitAligner.pl --mode finalize \
   --free free.matrix_with_fuse.txt \
   --fix fix.matrix_with_fuse.txt \
