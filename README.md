@@ -87,6 +87,8 @@ SplitAligner/
     algorithm.md
     faq.md
 ```
+---
+
 ## Installation
 
 SplitAligner is implemented in Perl.
