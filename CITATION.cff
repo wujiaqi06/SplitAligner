@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+title: "SplitAligner"
+message: "If you use SplitAligner in your work, please cite the software repository and the associated preprint."
+type: software
+authors:
+  - family-names: "Wu"
+    given-names: "Jiaqi"
+    email: "wujiaqi@hiroshima-u.ac.jp"
+repository-code: "https://github.com/wujiaqi06/SplitAligner"
+license: "MIT"
+version: "v1.0.0"
+date-released: "2026-03-17"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Wu"
+      given-names: "Jiaqi"
+  title: "SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping"
+  journal: "bioRxiv"
+  year: 2026
+  doi: "10.64898/2026.02.24.707838"
