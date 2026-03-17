@@ -94,7 +94,7 @@ SplitAligner/
 
 SplitAligner is implemented in Perl.
 
-## Requirements
+### Requirements
 	•	Perl 5
 	•	Standard Perl modules (core):
 	•	Getopt::Long
@@ -103,7 +103,7 @@ SplitAligner is implemented in Perl.
 	•	FindBin
 	•	File::Spec
 
-## Setup
+### Setup
 
 Clone the repository and run via perl:
 
@@ -114,7 +114,7 @@ cd SplitAligner
 
 chmod +x SplitAligner.pl
 
-## add SplitAligner to PATH
+### add SplitAligner to PATH
 ### From the repository root:
 cd SplitAligner
 
