@@ -126,16 +126,21 @@ export PATH="$PWD:$PATH"
 SplitAligner.pl --help
 ```
 Make it permanent (optional)
+
 ##### macOS (zsh):
+
 ```text
 echo 'export PATH="'"$PWD"'":$PATH' >> ~/.zshrc
 source ~/.zshrc
 ```
+
 ##### Linux (bash):
+
 ```text
 echo 'export PATH="'"$PWD"'":$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
+
 ## Quick start
 
 A runnable example is provided in:
