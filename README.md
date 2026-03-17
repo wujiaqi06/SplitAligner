@@ -185,12 +185,12 @@ examples/302mammal/expected/
 Generate branch matrices from a species tree and a single gene-tree set.
 
 #### Required arguments
-	-	--species: species tree in Newick format
-	-	--gene: gene trees in the SplitAligner line-based input format (one record per line)
+		--species: species tree in Newick format
+		--gene: gene trees in the SplitAligner line-based input format (one record per line)
 
 #### Optional arguments
-	-	--label: output label prefix (default: inferred from the gene-tree filename)
-	-	--axis: species-axis label prefix (default: species_tree; useful for parallel runs)
+		--label: output label prefix (default: inferred from the gene-tree filename)
+		--axis: species-axis label prefix (default: species_tree; useful for parallel runs)
 
 #### Example (free-topology gene trees)
 ```bash
