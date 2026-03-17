@@ -88,32 +88,32 @@ SplitAligner/
     faq.md
 ```
 
-⸻
+---
 
 ## Installation
 
 SplitAligner is implemented in Perl.
 
 ### Requirements
-	•	Perl 5
-	•	Standard Perl modules (core):
-	•	Getopt::Long
-	•	File::Basename
-	•	File::Path
-	•	FindBin
-	•	File::Spec
+	-	Perl 5
+	-	Standard Perl modules (core):
+	-	Getopt::Long
+	-	File::Basename
+	-	File::Path
+	-	FindBin
+	-	File::Spec
 
 ### Setup
 
 Clone the repository and run via perl:
-
+```text
 git clone https://github.com/wujiaqi06/SplitAligner.git
 cd SplitAligner
-
+```
 (Optionally) make the controller executable:
-
+```text
 chmod +x SplitAligner.pl
-
+```
 ### add SplitAligner to PATH
 ### From the repository root:
 cd SplitAligner
@@ -156,8 +156,7 @@ Key expected outputs are provided in:
 
 examples/302mammal/expected/
 
-
-⸻
+---
 
 ## Command-line interface
 
@@ -166,12 +165,12 @@ examples/302mammal/expected/
 Generate branch matrices from a species tree and a single gene-tree set.
 
 #### Required arguments
-	•	--species: species tree in Newick format
-	•	--gene: gene trees in the SplitAligner line-based input format (one record per line)
+	-	--species: species tree in Newick format
+	-	--gene: gene trees in the SplitAligner line-based input format (one record per line)
 
 #### Optional arguments
-	•	--label: output label prefix (default: inferred from the gene-tree filename)
-	•	--axis: species-axis label prefix (default: species_tree; useful for parallel runs)
+	-	--label: output label prefix (default: inferred from the gene-tree filename)
+	-	--axis: species-axis label prefix (default: species_tree; useful for parallel runs)
 
 #### Example (free-topology gene trees)
 ```text
@@ -187,8 +186,7 @@ SplitAligner.pl --mode matrix \
   --gene input/fix_tree.examples.nwk \
   --label fix
 ```
-
-⸻
+---
 
 ### --mode finalize
 
@@ -215,16 +213,15 @@ SplitAligner.pl --mode finalize \
   --fix fix.matrix_with_fuse.txt \
   --final_label final
 ```
+---
 
-⸻
-
-### Input files
+## Input files
 
 #### Species tree
-	•	Format: Newick
-	•	One species tree per run
-	•	Species names must be consistent with the names used in the gene trees
-	•	The following species-tree formats are accepted:
+	-	Format: Newick
+	-	One species tree per run
+	-	Species names must be consistent with the names used in the gene trees
+	-	The following species-tree formats are accepted:
 ```text
 ((A,B),(C,D));
 ```
@@ -242,11 +239,11 @@ These correspond to:
 Internal tree annotations are removed during preprocessing and are not used in downstream calculations.
 
 Gene trees
-	•	Format: Newick (line-based records; one record per line)
-	•	Species names must match the species-tree naming convention
-	•	The current workflow assumes the project-specific input format used in the example dataset:
-	•	each line begins with a gene ID followed immediately by a Newick tree
-  •	Gene trees may include node support values (e.g., bootstrap). SplitAligner does not use these values for branch mapping or matrix construction.
+	-	Format: Newick (line-based records; one record per line)
+	-	Species names must match the species-tree naming convention
+	-	The current workflow assumes the project-specific input format used in the example dataset:
+	-	each line begins with a gene ID followed immediately by a Newick tree
+    -	Gene trees may include node support values (e.g., bootstrap). SplitAligner does not use these values for branch mapping or matrix construction.
 
 Examples:
 ```text
@@ -256,64 +253,64 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 ```
 Internal node annotations are allowed but are not used in split-based branch mapping.
 
-⸻
+---
 
-### Output files
+## Output files
 
 #### Matrix mode outputs
 
 Running --mode matrix generates:
-	•	speciesTree.forSplit.nwk
+	-	speciesTree.forSplit.nwk
 Species tree relabeled for split processing.
-	•	speciesTree.FigTree.tre
+	-	speciesTree.FigTree.tre
 Species tree annotated for visualization (FigTree-ready).
-	•	<axis>.splits.txt
+	-	<axis>.splits.txt
 Species-tree split definitions (default <axis>=species_tree).
-	•	<axis>.branch_map.txt
+	-	<axis>.branch_map.txt
 Mapping between branch labels and split definitions.
-	•	<label>_splits/
+	-	<label>_splits/
 Split representations for gene trees.
-	•	<label>_split_branch_label/
+	-	<label>_split_branch_label/
 Branch-mapped gene-tree split outputs.
-	•	<label>.matrix_no_fuse.txt
+	-	<label>.matrix_no_fuse.txt
 Branch matrix without fused-branch augmentation.
-	•	<label>.matrix_with_fuse.txt
+	-	<label>.matrix_with_fuse.txt
 Branch matrix including fused-branch columns (when present).
 
 In addition, SplitAligner writes:
-	•	commands.txt (exact executed commands, for provenance/debug)
-	•	run.log (timestamps and runtimes)
+	-	commands.txt (exact executed commands, for provenance/debug)
+	-	run.log (timestamps and runtimes)
 
 #### Finalize mode outputs
 
 Running --mode finalize generates:
-	•	<FREE_MATRIX>.na_fuse.txt
+	-	<FREE_MATRIX>.na_fuse.txt
 e.g., free.matrix_with_fuse.txt.na_fuse.txt
-	•	<FIX_MATRIX>.na_fuse.txt
+	-	<FIX_MATRIX>.na_fuse.txt
 e.g., fix.matrix_with_fuse.txt.na_fuse.txt
-	•	<final_label>.fix.na_classified.txt
-	•	<final_label>.free.na_classified.txt
+	-	<final_label>.fix.na_classified.txt
+	-	<final_label>.free.na_classified.txt
 
 The final NA-classified matrices are generated for genes shared between the fixed-tree and free-tree inputs.
 If no shared genes are found, the program stops with an error.
 
-⸻
+---
 
-### Interpretation of NA states
+## Interpretation of NA states
 
 SplitAligner distinguishes several biologically meaningful NA classes:
-	•	NA
+	-	NA
 Generic missing value before final classification.
-	•	NA_fuse
+	-	NA_fuse
 The branch is absent as a primitive branch but is represented through a fused branch after taxon pruning.
-	•	NA_struct
+	-	NA_struct
 The branch is missing in both fixed-tree and free-tree matrices, consistent with structural absence after projection.
-	•	NA_topo
+	-	NA_topo
 The branch is present in the fixed-tree matrix but absent in the free-tree matrix, consistent with topology-induced discordance.
 
-⸻
+---
 
-### Workflow overview
+## Workflow overview
 	1.	Label the species tree.
 	2.	Convert species-tree branches into canonicalized unrooted edge splits.
 	3.	Convert each gene tree into split form.
@@ -322,34 +319,34 @@ The branch is present in the fixed-tree matrix but absent in the free-tree matri
 	6.	Generate gene-by-branch matrices.
 	7.	Compare fixed-tree and free-tree matrices to classify NA states.
 
-⸻
+---
 
-### Preprint
+## Preprint
 
 SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping
 bioRxiv (2026), Jiaqi Wu.
 DOI: 10.64898/2026.02.24.707838
 
-⸻
+---
 
-### Documentation
+## Documentation
 
 Additional documentation is available in:
-	•	docs/io_spec.md
-	•	docs/algorithm.md
-	•	docs/faq.md
+	-	docs/io_spec.md
+	-	docs/algorithm.md
+	-	docs/faq.md
 
-⸻
+---
 
-### Citation
+## Citation
 
 If you use SplitAligner in your work, please cite the associated preprint/manuscript.
 
 A CITATION.cff file is provided for GitHub citation support.
 
-⸻
+---
 
-### Contact
+## Contact
 
 Jiaqi Wu
 Graduate School of Integrated Sciences for Life, Hiroshima University
