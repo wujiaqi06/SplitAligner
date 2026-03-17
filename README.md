@@ -2,7 +2,7 @@
 
 **SplitAligner** is a split-based gene tree–species tree reconciliation framework for robust branch mapping under missing taxa, fused branches, and gene-tree/species-tree discordance.
 
-It defines **branch identity on a fixed species-tree backbone** using canonicalized unrooted edge splits, projects the species-tree split space onto each gene tree according to its observed taxon set, and generates standardized **gene-by-branch mapping / branch-length matrices** for downstream comparative analyses.
+It defines branch identity on a fixed species-tree backbone using canonicalized unrooted edge splits, projects the species-tree split space onto each gene tree according to its observed taxon set, and generates standardized gene-by-branch mapping / branch-length matrices for downstream comparative analyses.
 
 SplitAligner explicitly distinguishes several biologically meaningful forms of missingness:
 
@@ -45,13 +45,44 @@ SplitAligner addresses this problem by:
 - defining branch identity using canonicalized unrooted edge splits,
 - projecting species-tree splits onto the taxon set observed in each gene tree,
 - distinguishing exact and fused branch correspondences,
-- generating branch matrices for large-scale comparative analyses,
+- generating branch matrices for comparative analyses,
 - separating structural, fusion-related, and topology-induced missingness.
 
 ---
 
-## Preprint
+## Repository structure
 
-**SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping**  
-bioRxiv (2026), Jiaqi Wu.  
-https://doi.org/10.64898/2026.02.24.707838
+```text
+SplitAligner/
+  SplitAligner.pl
+  README.md
+  LICENSE
+  CITATION.cff
+  .gitignore
+
+  scripts/
+    label_species_tree.pl
+    tree_to_splits.pl
+    split_branch_label.pl
+    generate_branch_matrix.pl
+    extract_na_fuse.pl
+    confirm_na_structure.pl
+
+  examples/
+    302mammal/
+      input/
+        speciesTree302.nwk
+        free_tree.examples.nwk
+        fix_tree.examples.nwk
+      run.sh
+      expected/
+        free.matrix_with_fuse.txt
+        fix.matrix_with_fuse.txt
+        final.fix.na_classified.txt
+        final.free.na_classified.txt
+        species_tree.branch_map.txt
+
+  docs/
+    io_spec.md
+    algorithm.md
+    faq.md
