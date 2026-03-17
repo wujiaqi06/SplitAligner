@@ -1,78 +1,57 @@
 # SplitAligner
 
-**SplitAligner** is a split-based gene–species tree reconciliation framework that defines **branch identity on a fixed species-tree backbone** under pervasive **missing taxa** and **gene-tree/species-tree discordance**. It produces standardized **branch-by-gene mapping / branch-length tables** and supports explicit decomposition of missingness into:
+**SplitAligner** is a split-based gene tree–species tree reconciliation framework for robust branch mapping under missing taxa, fused branches, and gene-tree/species-tree discordance.
 
-- `NA_struct`: structural missingness (degenerate projected split due to taxon coverage)
-- `NA_fuse`: fusion-row missingness (signal represented on a composite fused branch)
-- `NA_topo`: topology-induced missingness (decisive projected split absent from a free-topology gene tree)
+It defines **branch identity on a fixed species-tree backbone** using canonicalized unrooted edge splits, projects the species-tree split space onto each gene tree according to its observed taxon set, and generates standardized **gene-by-branch mapping / branch-length matrices** for downstream comparative analyses.
 
-This repository hosts the source code, example commands, and scripts to reproduce the figures in the preprint.
+SplitAligner explicitly distinguishes several biologically meaningful forms of missingness:
+
+- `NA_struct`: structural missingness caused by degenerate projected splits after taxon pruning
+- `NA_fuse`: fusion-row missingness, where signal is represented on a composite fused branch
+- `NA_topo`: topology-induced missingness, where a decisive projected split is absent from a free-topology gene tree
+
+This repository contains the SplitAligner source code, example datasets, and documentation for reproducing the core branch-mapping workflow.
 
 ---
+
 ## Introduction
+
 On a fixed species-tree spine,
 
-we ask one thing: does branch b still hold?
+we ask one thing: does branch *b* still hold?
 
 Project the split:
 
-If it collapses — NA_struct.
+If it collapses — `NA_struct`.
 
-If branches fuse — Bs1|Bs3, NA_fuse.
+If branches fuse — `Bs1|Bs3`, `NA_fuse`.
 
-If topology turns away — NA_topo.
+If topology turns away — `NA_topo`.
 
 No ghosts, no leaks:
 
-Total = Mapped + NA_struct + NA_fuse + NA_topo.
+**Total = Mapped + NA_struct + NA_fuse + NA_topo.**
 
 A quiet ledger—where every absence has a name.
+
+---
+
+## Why SplitAligner?
+
+In phylogenomics, branch identity is often treated as if it were stable across all gene trees. In practice, missing taxa can collapse multiple species-tree branches into the same projected split, making naive branch-to-branch comparison unreliable.
+
+SplitAligner addresses this problem by:
+
+- defining branch identity using canonicalized unrooted edge splits,
+- projecting species-tree splits onto the taxon set observed in each gene tree,
+- distinguishing exact and fused branch correspondences,
+- generating branch matrices for large-scale comparative analyses,
+- separating structural, fusion-related, and topology-induced missingness.
+
+---
 
 ## Preprint
 
 **SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping**  
-bioRxiv (2026), Wu. https://doi.org/10.64898/2026.02.24.707838
-
----
-
-## Key ideas
-
-Given a **species tree** `S` and a **gene tree** `G_g` with a gene-specific taxon set `T_g`:
-
-1. Decompose trees into **splits (bipartitions)**.
-2. **Project** each species-tree split onto `T_g` to evaluate whether a branch is informative (decisive) or degenerates (`NA_struct`).
-3. Under missing taxa, multiple species-tree branches can become indistinguishable on `T_g`, forming a **fusion group**. SplitAligner reports a composite fused-branch identity (e.g., `Bs1|Bs3`) and marks member branches as `NA_fuse`.
-4. Under free-topology gene trees, SplitAligner additionally detects **topology-induced missingness** (`NA_topo`).
-
----
-
-## Inputs / Outputs
-
-### Inputs
-- Species tree in Newick (required for the main pipeline)
-- Gene trees in Newick (fixed-topology and/or free-topology)
-- Optional: gene lists, branch label files, mapping options (see `options/`)
-
-### Outputs
-- **Branch-by-gene mapping / branch-length tables** (TSV)
-- Optional: tables including **composite fused branches**
-- Branch-wise summary tables, including **Support (%)** and missingness decomposition
-- Annotated species trees (e.g., with branch-wise Support)
-
----
-
-## Quick start (example)
-
-> **NOTE**: The repository includes small example datasets under `examples/` for a quick sanity check.
-
-```bash
-# 1) Prepare / normalize gene trees (example; adjust to your pipeline)
-Rscript scripts/Change_Tree_format.R
-
-# 2) Run SplitAligner mapping (example command; update filenames)
-perl SplitAligner.pl \
-  --species examples/species_tree.tre \
-  --genes   examples/gene_trees.nwk \
-  --matrix  results/gene_branch_matrix.tsv \
-  --fusion  none
-
+bioRxiv (2026), Jiaqi Wu.  
+https://doi.org/10.64898/2026.02.24.707838
