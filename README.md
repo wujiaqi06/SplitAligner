@@ -185,11 +185,15 @@ examples/302mammal/expected/
 Generate branch matrices from a species tree and a single gene-tree set.
 
 #### Required arguments
+
 		--species: species tree in Newick format
+		
 		--gene: gene trees in the SplitAligner line-based input format (one record per line)
 
 #### Optional arguments
+
 		--label: output label prefix (default: inferred from the gene-tree filename)
+		
 		--axis: species-axis label prefix (default: species_tree; useful for parallel runs)
 
 #### Example (free-topology gene trees)
@@ -238,10 +242,15 @@ SplitAligner.pl --mode finalize \
 ## Input files
 
 #### Species tree
+
 	-	Format: Newick
+	
 	-	One species tree per run
+	
 	-	Species names must be consistent with the names used in the gene trees
+	
 	-	The following species-tree formats are accepted:
+	
 ```text
 ((A,B),(C,D));
 ```
@@ -259,9 +268,13 @@ These correspond to:
 Internal tree annotations are removed during preprocessing and are not used in downstream calculations.
 
 Gene trees
-	-	Format: Newick (line-based records; one record per line)	
+
+	-	Format: Newick (line-based records; one record per line)
+	
 	-	Species names must match the species-tree naming convention	
+	
 	-	The current workflow assumes the project-specific input format used in the example dataset:	
+	
 	-	each line begins with a gene ID followed immediately by a Newick tree
 	
 ##### -	Node support annotations (e.g., bootstrap values) are allowed in input gene trees, but are ignored by SplitAligner.
