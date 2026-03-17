@@ -86,3 +86,27 @@ SplitAligner/
     io_spec.md
     algorithm.md
     faq.md
+```
+## Installation
+
+SplitAligner is implemented in Perl.
+
+### Requirements
+
+- Perl 5
+- Standard Perl modules:
+  - `Getopt::Long`
+  - `File::Basename`
+  - `File::Path`
+
+No external R scripts are required for the main workflow.
+
+### Setup
+
+Clone the repository, make the main script executable, and add the project root to your `PATH`:
+
+```bash
+git clone https://github.com/wujiaqi06/SplitAligner.git
+cd SplitAligner
+chmod +x SplitAligner.pl
+export PATH="$PWD:$PATH"
