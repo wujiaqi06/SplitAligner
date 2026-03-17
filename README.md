@@ -61,7 +61,7 @@ SplitAligner/
   .gitignore
 
   scripts/
-    label_species_tree.pl
+    label_speciesTree.pl
     tree_to_splits.pl
     split_branch_label.pl
     generate_branch_matrix.pl
@@ -80,7 +80,7 @@ SplitAligner/
         fix.matrix_with_fuse.txt
         final.fix.na_classified.txt
         final.free.na_classified.txt
-        species_tree.branch_map.txt
+        speciesTree.branch_map.txt
 
   docs/
     io_spec.md
@@ -112,16 +112,18 @@ chmod +x SplitAligner.pl
 export PATH="$PWD:$PATH"
 ```
 
-### Quick start
+## Quick start
 
 The main workflow consists of two stages:
-	1.	generate branch matrices from a species tree and a set of gene trees,
-	2.	finalize NA classification by comparing the fixed-tree and free-tree matrices.
 
-Matrix mode
+1. Generate branch matrices from a species tree and a set of gene trees.
+2. Finalize NA classification by comparing the fixed-tree and free-tree matrices.
+
+### Matrix mode
 
 Generate the branch matrix for free-topology gene trees:
-```
+
+```bash
 SplitAligner.pl --mode matrix \
   --species input/speciesTree302.nwk \
   --gene input/free_tree.examples.nwk \
@@ -134,7 +136,8 @@ SplitAligner.pl --mode matrix \
   --gene input/fix_tree.examples.nwk \
   --label fix
 ```
-Finalize mode
+### Finalize mode
+
 Compare the fixed-tree and free-tree outputs and classify NA states:
 ```
 SplitAligner.pl --mode finalize \
@@ -143,136 +146,166 @@ SplitAligner.pl --mode finalize \
   --final_label final
 ```
 ### Example
+
 A runnable example is provided in:
-```
+
 examples/302mammal/
-```
+
 Run the example as follows:
-```
+
 cd examples/302mammal
 bash run.sh
-```
+
 Key expected outputs are provided in:
-```
+
 examples/302mammal/expected/
-```
-## Command-line interface
---mode matrix
+
+Command-line interface
+
+## --mode matrix
 
 Required arguments:
-	•	--species : species tree in Newick format
-	•	--gene : gene trees in Newick format
-	•	--label : output label prefix
+  • --species: species tree in Newick format
+  • --gene: gene trees in Newick format
+  • --label: output label prefix
 
 Example:
-```
+
 SplitAligner.pl --mode matrix \
   --species input/speciesTree302.nwk \
   --gene input/free_tree.examples.nwk \
   --label free
-```
---mode finalize
+
+## --mode finalize
 
 Required arguments:
-	•	--free : matrix generated from free-topology gene trees
-	•	--fix : matrix generated from fixed-topology gene trees
-	•	--final_label : output prefix for final NA-classified matrices
+  • --free: matrix generated from free-topology gene trees
+  • --fix: matrix generated from fixed-topology gene trees
+  • --final_label: output prefix for final NA-classified matrices
+
 Example:
-```
+
 SplitAligner.pl --mode finalize \
   --free free.matrix_with_fuse.txt \
   --fix fix.matrix_with_fuse.txt \
   --final_label final
+
+## Input files
+
+### Species tree
+
+- Format: Newick
+- One species tree per run
+- Species names must be consistent with the names used in the gene trees
+- The following species-tree formats are accepted:
+
+```text
+((A,B),(C,D));
 ```
-### Input files
+```
+((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.1):0.1;
+```
+```
+((A:0.1,B:0.2)100:0.2,(C:0.1,D:0.1)95:0.1)100:0.1;
+```
+These correspond to:
+  1.  topology only,
+  2.  topology with branch lengths,
+  3.  topology with branch lengths and internal node annotations (for example, support values).
 
-Species tree
-	•	Format: Newick
-	•	One species tree per run
-	•	Species names must be consistent with the names used in the gene trees
+Internal tree annotations are removed during preprocessing and are not used in downstream calculations.
 
-Gene trees
-	•	Format: Newick
-	•	Species names must match the species-tree naming convention
-	•	The current workflow assumes gene trees are supplied in the project-specific input format used by the example dataset
+### Gene trees
+  • Format: Newick
+  • Species names must match the species-tree naming convention
+  • The current workflow assumes the project-specific input format used in the example dataset
+  • One gene tree record is provided per line
+  • Each line begins with a gene ID followed immediately by a Newick tree
+
+The following gene-tree formats are accepted:
+
+```
+GeneA((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.1):0.1;
+GeneB((A:0.2,B:0.1):0.1,(C:0.1,(D:0.1,E:0.2):0.1):0.1):0.1;
+GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
+```
+```
+GeneA((A:0.1,B:0.2)100:0.2,(C:0.1,D:0.1)95:0.1)95:0.1;
+GeneB((A:0.2,B:0.1)95:0.1,(C:0.1,(D:0.1,E:0.2)100:0.1)100:0.1)80:0.1;
+GeneC((A:0.1,B:0.2)95:0.2,(C:0.1,D:0.1)100:0.4)100:0.1;
+```
+
+In gene-tree input, internal node annotations are allowed but are not used in split-based branch mapping.
 
 Fixed-tree vs free-tree inputs
 
 SplitAligner can be applied to both:
-	•	free-topology gene trees, typically inferred independently for each gene
-	•	fixed-topology gene trees, typically constrained to a species-tree topology or another fixed-topology framework
+  • free-topology gene trees, typically inferred independently for each gene
+  • fixed-topology gene trees, typically constrained to a species-tree topology or another fixed-topology framework
 
 The final NA classification step compares these two outputs.
 
 ### Output files
 
-Matrix mode outputs
+## Matrix mode outputs
 
 Running --mode matrix generates the following main files:
-	•	species_tree.forSplit.nwk
-species tree relabeled for split processing
-	•	speciesTree.FigTree.tre or equivalent visualization tree output
-species tree annotated for visualization
-	•	species_tree.splits.txt
-species-tree split definitions
-	•	species_tree.branch_map.txt
-mapping between branch labels and split definitions
-	•	<label>_splits/
-split representations for gene trees
-	•	<label>_split_branch_label/
-branch-mapped gene-tree split outputs
-	•	<label>.matrix_no_fuse.txt
-branch matrix without fused-branch completion
-	•	<label>.matrix_with_fuse.txt
-branch matrix with fused-branch completion
+  • speciesTree.forSplit.nwk
+Species tree relabeled for split processing.
+  • speciesTree.FigTree.tre
+Species tree annotated for visualization.
+  • speciesTree.splits.txt
+Species-tree split definitions.
+  • speciesTree.branch_map.txt
+Mapping between branch labels and split definitions.
+  • <label>_splits/
+Split representations for gene trees.
+  • <label>_split_branch_label/
+Branch-mapped gene-tree split outputs.
+  • <label>.matrix_no_fuse.txt
+Branch matrix without fused-branch completion.
+  • <label>.matrix_with_fuse.txt
+Branch matrix with fused-branch completion.
 
-Finalize mode outputs
+## Finalize mode outputs
 
 Running --mode finalize generates:
-	•	<free>.na_fuse.txt
-	•	<fix>.na_fuse.txt
-	•	<final_label>.fix.na_classified.txt
-	•	<final_label>.free.na_classified.txt
+  • <free>.na_fuse.txt
+  • <fix>.na_fuse.txt
+  • <final_label>.fix.na_classified.txt
+  • <final_label>.free.na_classified.txt
 
 The final NA-classified matrices are generated for genes shared between the fixed-tree and free-tree inputs.
 If no shared genes are found, the program stops with an error.
 
-⸻
-
 ### Interpretation of NA states
 
 SplitAligner distinguishes several biologically meaningful NA classes.
-	•	NA
-generic missing value before final classification
-	•	NA_fuse
-the branch is absent as a primitive branch but is represented through a fused branch after taxon pruning
-	•	NA_struct
-the branch is missing in both fixed-tree and free-tree matrices, consistent with structural absence after projection
-	•	NA_topo
-the branch is present in the fixed-tree matrix but absent in the free-tree matrix, consistent with topology-induced discordance
-
-⸻
+  • NA
+Generic missing value before final classification.
+  • NA_fuse
+The branch is absent as a primitive branch but is represented through a fused branch after taxon pruning.
+  • NA_struct
+The branch is missing in both fixed-tree and free-tree matrices, consistent with structural absence after projection.
+  • NA_topo
+The branch is present in the fixed-tree matrix but absent in the free-tree matrix, consistent with topology-induced discordance.
 
 ### Workflow overview
 
 The SplitAligner workflow can be summarized as follows:
-	1.	Label the species tree.
-	2.	Convert species-tree branches into canonicalized unrooted edge splits.
-	3.	Convert each gene tree into split form.
-	4.	Project the species-tree split space after pruning taxa absent from each gene tree.
-	5.	Identify exact and fused branch correspondences.
-	6.	Generate gene-by-branch matrices.
-	7.	Compare fixed-tree and free-tree matrices to classify NA states.
-
-⸻
+  1.  Label the species tree.
+  2.  Convert species-tree branches into canonicalized unrooted edge splits.
+  3.  Convert each gene tree into split form.
+  4.  Project the species-tree split space after pruning taxa absent from each gene tree.
+  5.  Identify exact and fused branch correspondences.
+  6.  Generate gene-by-branch matrices.
+  7.  Compare fixed-tree and free-tree matrices to classify NA states.
 
 ### Notes
-	•	Branch identity is defined by split representation, not by node order.
-	•	Missing taxa can collapse multiple species-tree branches into the same projected split.
-	•	Fused branches are explicitly tracked rather than ignored.
-	•	Final NA classification is based only on genes shared between the fixed-tree and free-tree inputs.
-
-⸻
+  • Branch identity is defined by split representation, not by node order.
+  • Missing taxa can collapse multiple species-tree branches into the same projected split.
+  • Fused branches are explicitly tracked rather than ignored.
+  • Final NA classification is based only on genes shared between the fixed-tree and free-tree inputs.
 
 ### Preprint
 
@@ -280,16 +313,12 @@ SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based B
 bioRxiv (2026), Jiaqi Wu.
 https://doi.org/10.64898/2026.02.24.707838
 
-⸻
+### Documentation
 
-Documentation
-
-Additional documentation is available in:
-	•	docs/io_spec.md
-	•	docs/algorithm.md
-	•	docs/faq.md
-
-⸻
+### Additional documentation is available in:
+  • docs/io_spec.md
+  • docs/algorithm.md
+  • docs/faq.md
 
 ### Citation
 
@@ -297,11 +326,8 @@ If you use SplitAligner in your work, please cite the associated preprint/manusc
 
 A CITATION.cff file is provided for GitHub citation support.
 
-⸻
-
 ### Contact
 
 Jiaqi Wu
 Graduate School of Integrated Sciences for Life, Hiroshima University
-Email: wujiaqi@hiroshima-u.ac.jp, wujiaqi06@gmail.com
-
+Email: wujiaqi@hiroshima-u.ac.jp and wujiaqi06@gmail.com
