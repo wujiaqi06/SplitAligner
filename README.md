@@ -162,7 +162,7 @@ examples/302mammal/expected/
 
 Command-line interface
 
-## --mode matrix
+#### --mode matrix
 
 Required arguments:
   • --species: species tree in Newick format
@@ -176,7 +176,7 @@ SplitAligner.pl --mode matrix \
   --gene input/free_tree.examples.nwk \
   --label free
 
-## --mode finalize
+#### --mode finalize
 
 Required arguments:
   • --free: matrix generated from free-topology gene trees
@@ -190,9 +190,9 @@ SplitAligner.pl --mode finalize \
   --fix fix.matrix_with_fuse.txt \
   --final_label final
 
-## Input files
+### Input files
 
-### Species tree
+#### Species tree
 
 - Format: Newick
 - One species tree per run
@@ -215,7 +215,7 @@ These correspond to:
 
 Internal tree annotations are removed during preprocessing and are not used in downstream calculations.
 
-### Gene trees
+#### Gene trees
   • Format: Newick
   • Species names must match the species-tree naming convention
   • The current workflow assumes the project-specific input format used in the example dataset
