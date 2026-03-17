@@ -259,10 +259,11 @@ These correspond to:
 Internal tree annotations are removed during preprocessing and are not used in downstream calculations.
 
 Gene trees
-	-	Format: Newick (line-based records; one record per line)
-	-	Species names must match the species-tree naming convention
-	-	The current workflow assumes the project-specific input format used in the example dataset:
+	-	Format: Newick (line-based records; one record per line)	
+	-	Species names must match the species-tree naming convention	
+	-	The current workflow assumes the project-specific input format used in the example dataset:	
 	-	each line begins with a gene ID followed immediately by a Newick tree
+	
 ##### -	Node support annotations (e.g., bootstrap values) are allowed in input gene trees, but are ignored by SplitAligner.
 
 Examples:
