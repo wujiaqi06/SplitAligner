@@ -243,13 +243,10 @@ SplitAligner.pl --mode finalize \
 
 #### Species tree
 
-	-	Format: Newick
-	
-	-	One species tree per run
-	
-	-	Species names must be consistent with the names used in the gene trees
-	
-	-	The following species-tree formats are accepted:
+-	Format: Newick
+-	One species tree per run
+-	Species names must be consistent with the names used in the gene trees
+-	The following species-tree formats are accepted:
 	
 ```text
 ((A,B),(C,D));
@@ -268,14 +265,10 @@ These correspond to:
 Internal tree annotations are removed during preprocessing and are not used in downstream calculations.
 
 Gene trees
-
-	-	Format: Newick (line-based records; one record per line)
-	
-	-	Species names must match the species-tree naming convention	
-	
-	-	The current workflow assumes the project-specific input format used in the example dataset:	
-	
-	-	each line begins with a gene ID followed immediately by a Newick tree
+-	Format: Newick (line-based records; one record per line)
+-	Species names must match the species-tree naming convention	
+-	The current workflow assumes the project-specific input format used in the example dataset:	
+-	each line begins with a gene ID followed immediately by a Newick tree
 	
 ##### -	Node support annotations (e.g., bootstrap values) are allowed in input gene trees, but are ignored by SplitAligner.
 
@@ -366,9 +359,9 @@ DOI: 10.64898/2026.02.24.707838
 ## Documentation
 
 Additional documentation is available in:
-	-	docs/io_spec.md
-	-	docs/algorithm.md
-	-	docs/faq.md
+-	docs/io_spec.md
+-	docs/algorithm.md
+-	docs/faq.md
 
 ---
 
