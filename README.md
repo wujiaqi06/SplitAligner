@@ -114,8 +114,26 @@ cd SplitAligner
 
 chmod +x SplitAligner.pl
 
+## add SplitAligner to PATH
+### From the repository root:
+cd SplitAligner
 
-⸻
+#### macOS (zsh) / Linux (bash) — add to PATH for the current shell session
+export PATH="$PWD:$PATH"
+
+#### test
+SplitAligner.pl --help
+
+Make it permanent (optional)
+	•	macOS (zsh):
+
+echo 'export PATH="'"$PWD"'":$PATH' >> ~/.zshrc
+source ~/.zshrc
+
+	•	Linux (bash):
+
+echo 'export PATH="'"$PWD"'":$PATH' >> ~/.bashrc
+source ~/.bashrc
 
 ## Quick start
 
