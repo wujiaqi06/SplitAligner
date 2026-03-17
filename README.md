@@ -151,14 +151,14 @@ Generate branch matrices from a species tree and a single gene-tree set.
 
 #### Example (free-topology gene trees)
 ```text
-perl ../../SplitAligner.pl --mode matrix \
+SplitAligner.pl --mode matrix \
   --species input/speciesTree302.nwk \
   --gene input/free_tree.examples.nwk \
   --label free
 ```
 #### Example (fixed-topology gene trees)
 ```text
-perl ../../SplitAligner.pl --mode matrix \
+SplitAligner.pl --mode matrix \
   --species input/speciesTree302.nwk \
   --gene input/fix_tree.examples.nwk \
   --label fix
@@ -185,12 +185,12 @@ Finalize will run:
 All executed commands are recorded in: commands.txt
 ```
 #### Example
-
-perl ../../SplitAligner.pl --mode finalize \
+```text
+SplitAligner.pl --mode finalize \
   --free free.matrix_with_fuse.txt \
   --fix fix.matrix_with_fuse.txt \
   --final_label final
-
+```
 
 ⸻
 
