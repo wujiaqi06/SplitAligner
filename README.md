@@ -103,40 +103,60 @@ SplitAligner is implemented in Perl.
 	-	FindBin
 	-	File::Spec
 
+## Installation
+
+SplitAligner is implemented in Perl.
+
+### Requirements
+
+- Perl 5
+- Standard Perl modules (core):
+  - `Getopt::Long`
+  - `File::Basename`
+  - `File::Path`
+  - `FindBin`
+  - `File::Spec`
+
+No external R scripts are required for the main workflow.
+
 ### Setup
 
-Clone the repository and run via perl:
-```text
+Clone the repository:
+
+```bash
 git clone https://github.com/wujiaqi06/SplitAligner.git
 cd SplitAligner
 ```
-(Optionally) make the controller executable:
-```text
+
+Optionally, make the main controller executable:
+
 chmod +x SplitAligner.pl
-```
-### add SplitAligner to PATH
-### From the repository root:
-cd SplitAligner
 
-#### macOS (zsh) / Linux (bash) — add to PATH for the current shell session
+Add SplitAligner to PATH
+
+From the repository root:
+
+```bash
 export PATH="$PWD:$PATH"
+```
+Test whether the command is available:
 
-#### test
-```text
+```bash
 SplitAligner.pl --help
 ```
-Make it permanent (optional)
 
-##### macOS (zsh):
+Make this setting permanent if desired.
 
-```text
+#### macOS (zsh)
+
+```bash
 echo 'export PATH="'"$PWD"'":$PATH' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-##### Linux (bash):
+#### Linux (bash)
 
-```text
+```bash
 echo 'export PATH="'"$PWD"'":$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
