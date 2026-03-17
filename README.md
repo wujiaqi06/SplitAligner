@@ -122,19 +122,20 @@ cd SplitAligner
 export PATH="$PWD:$PATH"
 
 #### test
+```text
 SplitAligner.pl --help
-
+```
 Make it permanent (optional)
 	•	macOS (zsh):
-
+```text
 echo 'export PATH="'"$PWD"'":$PATH' >> ~/.zshrc
 source ~/.zshrc
-
+```
 	•	Linux (bash):
-
+```text
 echo 'export PATH="'"$PWD"'":$PATH' >> ~/.bashrc
 source ~/.bashrc
-
+```
 ## Quick start
 
 A runnable example is provided in:
