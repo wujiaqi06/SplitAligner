@@ -101,8 +101,6 @@ SplitAligner is implemented in Perl.
   - `File::Basename`
   - `File::Path`
 
-No external R scripts are required for the main workflow.
-
 ### Setup
 
 Clone the repository, make the main script executable, and add the project root to your `PATH`:
