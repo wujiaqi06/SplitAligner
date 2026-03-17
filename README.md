@@ -263,7 +263,7 @@ Gene trees
 	-	Species names must match the species-tree naming convention
 	-	The current workflow assumes the project-specific input format used in the example dataset:
 	-	each line begins with a gene ID followed immediately by a Newick tree
-    -	Gene trees may include node support values (e.g., bootstrap). SplitAligner does not use these values for branch mapping or matrix construction.
+##### -	Node support annotations (e.g., bootstrap values) are allowed in input gene trees, but are ignored by SplitAligner.
 
 Examples:
 ```text
@@ -280,9 +280,9 @@ Internal node annotations are allowed but are not used in split-based branch map
 #### Matrix mode outputs
 
 Running --mode matrix generates:
-	-	speciesTree.forSplit.nwk
+	-	species_tree.forSplit.nwk
 Species tree relabeled for split processing.
-	-	speciesTree.FigTree.tre
+	-	species_tree.FigTree.tre
 Species tree annotated for visualization (FigTree-ready).
 	-	<axis>.splits.txt
 Species-tree split definitions (default <axis>=species_tree).
