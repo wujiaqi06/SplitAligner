@@ -8,9 +8,11 @@ SplitAligner explicitly distinguishes biologically meaningful forms of missingne
 
 - `NA_struct`: structural absence after taxon pruning causes a projected branch to become undefined
 - `NA_fuse`: signal is represented on a fused branch rather than on a primitive branch
-- `NA_topo`: the projected branch is supported in the fixed-topology analysis but absent in the free-topology gene tree
+- `NA_topo`: the projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree
 
 This repository contains the SplitAligner source code, example datasets, and documentation needed to reproduce the core branch-mapping workflow.
+
+Current release: `v1.0.0`
 
 ---
 
@@ -62,7 +64,42 @@ Instead of asking whether a gene tree simply "supports" a species-tree branch, S
 
 This shift turns branch reconciliation from a naive tree-comparison problem into a standardized gene-by-branch matrix construction framework under controlled missingness.
 
-In that sense, SplitAligner is not only a branch-mapping tool. It is also a branch-coordinate infrastructure for downstream comparative analyses, where each gene-branch cell can be interpreted within an explicit missingness model rather than as an undifferentiated absence.
+In that sense, SplitAligner is not only a branch-mapping tool. It also provides a branch coordinate system for downstream comparative analyses, where each gene-branch cell can be interpreted within an explicit missingness model rather than as an undifferentiated absence.
+
+---
+
+## Relation to Other Approaches
+
+Naive branch comparison typically asks whether a gene tree contains a branch that appears to correspond to a species-tree branch. That logic becomes unstable when taxon pruning changes the projected branch structure, because branch identity may no longer survive as a simple one-to-one correspondence.
+
+SplitAligner instead asks a prior question: does the species-tree branch remain well-defined on the gene-specific taxon set? Only after that projection step does it classify the outcome as mapped, represented by a fused branch, structurally absent, or topologically absent.
+
+Similarly, concordance-style summaries are often used to count supporting and conflicting signal around species-tree branches. SplitAligner can contribute to that broader goal, but its primary role is different: it provides a projection-aware branch coordinate system and a standardized gene-by-branch matrix framework under explicit missingness categories.
+
+---
+
+## Highlights
+
+- Defines branch identity in projected split space rather than by naive branch-to-branch comparison
+- Distinguishes three biologically meaningful missingness states: `NA_struct`, `NA_fuse`, and `NA_topo`
+- Produces standardized gene-by-branch matrices for both fixed-topology and free-topology gene trees
+- Makes fused branches explicit instead of treating projection-induced ambiguity as generic missing data
+- Computes branch-wise concordance (`Support`) on the species-tree backbone
+- Provides a reproducible example workflow and plain-text outputs for downstream analysis
+
+---
+
+## At a Glance
+
+```mermaid
+flowchart LR
+    A["Species tree"] --> B["Projected split space"]
+    C["Gene trees"] --> D["Per-gene split mapping"]
+    B --> D
+    D --> E["Gene-by-branch matrices"]
+    E --> F["NA_struct / NA_fuse / NA_topo"]
+    F --> G["Support table + annotated tree"]
+```
 
 ---
 
@@ -73,6 +110,7 @@ In that sense, SplitAligner is not only a branch-mapping tool. It is also a bran
 - Recognition of fused branch patterns after taxon pruning
 - Matrix generation for fixed-topology and free-topology gene-tree sets
 - Final classification of `NA`, `NA_fuse`, `NA_struct`, and `NA_topo`
+- Optional branch-wise `Support` summary and annotated species tree at the end of `finalize`
 - Reproducible example workflow included in `examples/302mammal/`
 
 ---
@@ -101,7 +139,11 @@ SplitAligner/
         free_tree.examples.nwk
         fix_tree.examples.nwk
       expected/
-      run.sh
+    preprint_302mammal/
+      speciesTree302.nwk
+      free.2275genes.nwk
+      fix.2275genes.nwk
+    run.sh
 
   docs/
     algorithm.md
@@ -175,22 +217,30 @@ source ~/.bashrc
 
 ## Quick Start
 
-A runnable example is provided in `examples/302mammal/`.
+Two runnable example configurations are provided.
+
+- `examples/302mammal/`
+  Small toy example for quick smoke testing and expected-output comparison.
+- `examples/preprint_302mammal/`
+  Full 2275-gene dataset used for the preprint-scale 302-mammal analysis.
 
 From the repository root:
 
 ```bash
-cd examples/302mammal
-bash run.sh
+bash examples/run.sh toy
+bash examples/run.sh preprint
 ```
 
-This example performs:
+The `toy` run is intended for fast workflow checks. The `preprint` run reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree.
+
+The example workflow performs:
 
 1. matrix generation for free-topology gene trees
 2. matrix generation for fixed-topology gene trees
 3. final NA classification by comparing the two matrix sets
+4. optional `Support` calculation and species-tree annotation if `--species_tree` is provided
 
-Expected reference outputs are provided in `examples/302mammal/expected/`.
+Expected reference outputs are provided for the toy example in `examples/302mammal/expected/`.
 
 ---
 
@@ -212,6 +262,7 @@ SplitAligner runs in two major stages.
 1. Mark primitive-branch `NA` cells that are explained by fused-branch signal as `NA_fuse`
 2. Compare fixed-topology and free-topology matrices on shared genes
 3. Classify remaining missing values as `NA_struct` or `NA_topo`
+4. Optionally compute branch-wise `Support` and write an annotated species tree
 
 ---
 
@@ -266,13 +317,18 @@ Required arguments:
 - `--fix`: fixed-topology `matrix_with_fuse` file
 - `--final_label`: output prefix for the classified matrices
 
+Optional argument:
+
+- `--species_tree`: `species_tree.forSplit.nwk` for branch-wise `Support` calculation and tree annotation
+
 Example:
 
 ```bash
 perl SplitAligner.pl --mode finalize \
   --free free.matrix_with_fuse.txt \
   --fix fix.matrix_with_fuse.txt \
-  --final_label final
+  --final_label final \
+  --species_tree species_tree.forSplit.nwk
 ```
 
 Main outputs:
@@ -281,8 +337,14 @@ Main outputs:
 - `<fix>.na_fuse.txt`
 - `<final_label>.fix.na_classified.txt`
 - `<final_label>.free.na_classified.txt`
+- `<final_label>.support_b.txt` if `--species_tree` is provided
+- `<species_prefix>.support_b.nwk` if `--species_tree` is provided
 
 The final classification step is defined only for genes shared between the fixed-topology and free-topology inputs. If no shared genes are found, SplitAligner stops with an error.
+
+When `--species_tree` is provided, SplitAligner also computes a branch-wise concordance score, `Support(b)`, on the species-tree backbone. In the current implementation, `Support(b)` is defined on genes shared between the fixed-topology and free-topology inputs as:
+
+`Support(b) = 100 * [number of non-NA entries for branch b in the free-topology matrix] / [number of non-NA entries for branch b in the fixed-topology matrix]`
 
 ---
 
@@ -359,6 +421,10 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
   - fixed-topology matrix after final NA classification
 - `<final_label>.free.na_classified.txt`
   - free-topology matrix after final NA classification
+- `<final_label>.support_b.txt`
+  - branch-wise `Support` summary, including fixed-matrix and free-matrix non-NA counts
+- `<species_prefix>.support_b.nwk`
+  - standard Newick tree with internal-node `Support` values written in the bootstrap position
 
 ---
 
@@ -369,9 +435,9 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `NA_fuse`
   - the branch is absent as a primitive branch but represented through a fused branch after taxon pruning
 - `NA_struct`
-  - the projected branch is structurally absent in both fixed-topology and free-topology comparisons
+  - the projected branch is structurally absent after projection and is not evaluable for that gene
 - `NA_topo`
-  - the branch is present in the fixed-topology matrix but absent in the free-topology matrix, consistent with topology-induced discordance
+  - the projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree, consistent with topology-induced discordance
 
 These categories are intended to prevent biologically distinct sources of missingness from being conflated in downstream analyses.
 
@@ -384,6 +450,23 @@ Additional documentation is available in:
 - `docs/algorithm.md`
 - `docs/io_spec.md`
 - `docs/faq.md`
+
+---
+
+## Future Directions
+
+The current implementation of SplitAligner focuses on split-based branch mapping, branch-wise `Support` summarization, and NA-state classification under missing taxa, fused branches, and topological discordance.
+
+Several natural extensions are possible in future versions, including:
+
+- additional downstream utilities for branch-matrix parsing, summarization, and visualization
+- wrapper packages for R and Python
+- performance-oriented implementation of key modules for larger datasets
+- expanded support for larger comparative workflows built on projected branch coordinate systems
+
+More generally, SplitAligner provides a practical framework for representing branch correspondence in projected split space.
+
+We expect this representation to support future extensions of branch-wise comparative analyses in phylogenomics and other settings where tree-to-tree topological discordance must be handled explicitly.
 
 ---
 

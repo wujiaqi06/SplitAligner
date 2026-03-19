@@ -31,19 +31,24 @@
 #        --free        <free.matrix_with_fuse.txt>
 #        --fix         <fix.matrix_with_fuse.txt>
 #        --final_label <output_prefix>
+#      Optional arguments:
+#        --species_tree <species_tree.forSplit.nwk>
 #
 #      Output files:
 #        <free>.na_fuse.txt
 #        <fix>.na_fuse.txt
 #        <final_label>.fix.na_classified.txt
 #        <final_label>.free.na_classified.txt
+#        <final_label>.support_b.txt
+#        <species_prefix>.support_b.nwk
 #
 # Usage examples:
 #   SplitAligner.pl --mode matrix --species speciesTree302.nwk \
 #     --gene free_tree.examples.nwk --label free
 #
 #   SplitAligner.pl --mode finalize --free free.matrix_with_fuse.txt \
-#     --fix fix.matrix_with_fuse.txt --final_label final
+#     --fix fix.matrix_with_fuse.txt --final_label final \
+#     --species_tree species_tree.forSplit.nwk
 # ==============================================================================
 
 use strict;
@@ -63,6 +68,7 @@ GetOptions(
     'free=s'        => \$free_matrix,
     'fix=s'         => \$fix_matrix,
     'final_label=s' => \$final_label,
+    'species_tree=s' => \$species_tree,
     'help|h'        => \$help,
 ) or die usage();
 
@@ -94,6 +100,7 @@ elsif ($mode eq 'finalize') {
         free        => $free_matrix,
         fix         => $fix_matrix,
         final_label => $final_label,
+        species_tree => $species_tree,
     );
 }
 else {
@@ -175,9 +182,10 @@ sub run_matrix_mode {
 sub run_finalize_mode {
     my %arg = @_;
 
-    my $free  = $arg{free};
-    my $fix   = $arg{fix};
-    my $final = $arg{final_label};
+    my $free    = $arg{free};
+    my $fix     = $arg{fix};
+    my $final   = $arg{final_label};
+    my $species = $arg{species_tree};
 
     die "[ERROR] --free is required in --mode finalize\n"        unless defined $free  && $free ne '';
     die "[ERROR] --fix is required in --mode finalize\n"         unless defined $fix   && $fix ne '';
@@ -185,6 +193,9 @@ sub run_finalize_mode {
 
     die "[ERROR] FREE matrix file not found: $free\n" unless -e $free;
     die "[ERROR] FIX matrix file not found: $fix\n"   unless -e $fix;
+    if (defined $species && $species ne '') {
+        die "[ERROR] Species tree file not found: $species\n" unless -e $species;
+    }
     validate_label($final, '--final_label');
 
     print STDERR "[INFO] Running SplitAligner finalize mode\n";
@@ -211,7 +222,12 @@ sub run_finalize_mode {
 
     run_perl_script(
         'confirm_na_structure.pl',
-        ['--fix', $fix_na_fuse, '--free', $free_na_fuse, '-o', $final],
+        [
+            '--fix', $fix_na_fuse,
+            '--free', $free_na_fuse,
+            (defined $species && $species ne '' ? ('--species_tree', $species) : ()),
+            '-o', $final,
+        ],
         'Classify NA_struc and NA_topo',
     );
 
@@ -225,6 +241,9 @@ sub run_finalize_mode {
     print STDERR "[INFO] Finalize mode completed successfully\n";
     print STDERR "[INFO] Generated: $final.fix.na_classified.txt\n";
     print STDERR "[INFO] Generated: $final.free.na_classified.txt\n";
+    if (defined $species && $species ne '') {
+        print STDERR "[INFO] Generated: $final.support_b.txt\n";
+    }
 }
 
 # ------------------------------------------------------------------------------
@@ -265,7 +284,7 @@ sub usage {
     return <<'USAGE';
 Usage:
   SplitAligner.pl --mode matrix --species <species_tree.nwk> --gene <gene_trees.nwk> --label <label>
-  SplitAligner.pl --mode finalize --free <free.matrix_with_fuse.txt> --fix <fix.matrix_with_fuse.txt> --final_label <prefix>
+  SplitAligner.pl --mode finalize --free <free.matrix_with_fuse.txt> --fix <fix.matrix_with_fuse.txt> --final_label <prefix> [--species_tree <species_tree.forSplit.nwk>]
 
 Modes:
   matrix
@@ -288,18 +307,24 @@ Modes:
 
   finalize
     Apply NA_fuse, then classify NA_struc / NA_topo using shared genes between
-    fixed-tree and free-tree matrices.
+    fixed-tree and free-tree matrices. If --species_tree is provided, also
+    compute branch-wise Support and write an annotated species tree.
 
     Required:
       --free         FREE matrix_with_fuse file
       --fix          FIX matrix_with_fuse file
       --final_label  Output prefix for final classified matrices
 
+    Optional:
+      --species_tree Species tree in forSplit format for Support annotation
+
     Outputs:
       <free>.na_fuse.txt
       <fix>.na_fuse.txt
       <final_label>.fix.na_classified.txt
       <final_label>.free.na_classified.txt
+      <final_label>.support_b.txt
+      <species_prefix>.support_b.nwk
 
 Notes:
   - Helper scripts are expected in: scripts/

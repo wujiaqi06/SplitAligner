@@ -18,32 +18,41 @@
 # Inputs:
 #   --fix  <fix_matrix>   : matrix generated from fixed-topology gene trees
 #   --free <free_matrix>  : matrix generated from free-topology gene trees
+#   --species_tree <species_tree.forSplit.nwk> : optional species tree for
+#                                                branch-wise Support annotation
 #
 # Outputs (prefix = -o):
 #   <prefix>.fix.na_classified.txt   : fixed matrix with NA_struct applied
 #   <prefix>.free.na_classified.txt  : free matrix with NA_struct / NA_topo applied
+#   <prefix>.support_b.txt           : optional branch-wise Support summary
+#   <species_prefix>.support_b.nwk   : optional species tree in standard Newick
+#                                      format with internal-node Support values
 #
 # Usage:
-#   perl confirm_na_structure.pl --fix fix.matrix.txt --free free.matrix.txt -o out_prefix
+#   perl confirm_na_structure.pl --fix fix.matrix.txt --free free.matrix.txt \
+#     --species_tree species_tree.forSplit.nwk -o out_prefix
 # ==============================================================================
 
 use strict;
 use warnings;
 use Getopt::Long;
+use File::Basename qw(basename);
 
-my ($fix_matrix_path, $free_matrix_path, $out_prefix);
+my ($fix_matrix_path, $free_matrix_path, $species_tree_path, $out_prefix);
 
 GetOptions(
-    'fix=s'  => \$fix_matrix_path,
-    'free=s' => \$free_matrix_path,
-    'o=s'    => \$out_prefix,
+    'fix=s'          => \$fix_matrix_path,
+    'free=s'         => \$free_matrix_path,
+    'species_tree=s' => \$species_tree_path,
+    'o=s'            => \$out_prefix,
 ) or die "[ERROR] Invalid command line arguments.\n";
 
-die "Usage: $0 --fix <fix_matrix> --free <free_matrix> -o <out_prefix>\n"
+die "Usage: $0 --fix <fix_matrix> --free <free_matrix> [--species_tree <species_tree.forSplit.nwk>] -o <out_prefix>\n"
     unless defined $fix_matrix_path && defined $free_matrix_path && defined $out_prefix;
 
 my $out_fix  = "$out_prefix.fix.na_classified.txt";
 my $out_free = "$out_prefix.free.na_classified.txt";
+my $out_support = "$out_prefix.support_b.txt";
 
 # -------------------------
 # Read FIX matrix
@@ -144,6 +153,14 @@ open(my $OUT_FREE, '>', $out_free) or die "[ERROR] Cannot write $out_free: $!\n"
 print {$OUT_FIX}  "$fix_header_line\n";
 print {$OUT_FREE} "$free_header_line\n";
 
+my %support_stats = initialize_support_stats(
+    fix_rows     => \%fix_row,
+    free_rows    => \%free_row,
+    fix_branches => \@fix_branches,
+    free_branches => \@free_branches,
+    shared_genes => \@shared_genes,
+);
+
 # -------------------------
 # Classify NA types
 # -------------------------
@@ -186,3 +203,145 @@ close $OUT_FREE;
 
 print STDERR "[INFO] Wrote: $out_fix\n";
 print STDERR "[INFO] Wrote: $out_free\n";
+
+if (defined $species_tree_path && $species_tree_path ne '') {
+    die "[ERROR] Species tree file not found: $species_tree_path\n" unless -e $species_tree_path;
+    write_support_outputs(
+        stats             => \%support_stats,
+        branches          => \@fix_branches,
+        out_support       => $out_support,
+        species_tree_path => $species_tree_path,
+    );
+}
+
+sub write_support_outputs {
+    my %arg = @_;
+
+    my $stats_ref         = $arg{stats};
+    my $branches_ref      = $arg{branches};
+    my $out_support_path  = $arg{out_support};
+    my $tree_path         = $arg{species_tree_path};
+
+    open(my $SUP, '>', $out_support_path) or die "[ERROR] Cannot write $out_support_path: $!\n";
+    print {$SUP} join(
+        "\t",
+        qw(branch_id n_shared_genes n_fix_non_na n_free_non_na support_percent discordance_percent)
+    ), "\n";
+
+    my %support_value_for;
+    for my $b (@{$branches_ref}) {
+        my $s = $stats_ref->{$b} || {};
+        my $n_fix_non_na  = $s->{n_fix_non_na}  || 0;
+        my $n_free_non_na = $s->{n_free_non_na} || 0;
+        my $support       = $n_fix_non_na > 0 ? (100 * $n_free_non_na / $n_fix_non_na) : 0;
+        my $discordance   = $n_fix_non_na > 0 ? (100 - $support) : 0;
+
+        $support_value_for{$b} = sprintf('%.10f', $support);
+
+        print {$SUP} join(
+            "\t",
+            $b,
+            $s->{n_shared_genes} || 0,
+            $n_fix_non_na,
+            $n_free_non_na,
+            sprintf('%.10f', $support),
+            sprintf('%.10f', $discordance),
+        ), "\n";
+    }
+    close $SUP;
+
+    my $tree_text = read_tree_text($tree_path);
+    $tree_text = standardize_support_tree($tree_text, \%support_value_for);
+
+    my $tree_base = basename($tree_path);
+    if ($tree_base =~ /\.forSplit\.nwk$/) {
+        $tree_base =~ s/\.forSplit\.nwk$/.support_b.nwk/;
+    }
+    elsif ($tree_base =~ /\.nwk$/) {
+        $tree_base =~ s/\.nwk$/.support_b.nwk/;
+    }
+    else {
+        $tree_base .= '.support_b.nwk';
+    }
+
+    open(my $TREE_OUT, '>', $tree_base) or die "[ERROR] Cannot write $tree_base: $!\n";
+    print {$TREE_OUT} $tree_text;
+    close $TREE_OUT;
+
+    print STDERR "[INFO] Wrote: $out_support_path\n";
+    print STDERR "[INFO] Wrote: $tree_base\n";
+}
+
+sub read_tree_text {
+    my ($path) = @_;
+    open(my $IN, '<', $path) or die "[ERROR] Cannot open $path: $!\n";
+    local $/ = undef;
+    my $text = <$IN>;
+    close $IN;
+    die "[ERROR] Species tree file is empty: $path\n" unless defined $text && $text ne '';
+    return $text;
+}
+
+sub standardize_support_tree {
+    my ($tree_text, $support_ref) = @_;
+
+    # Remove the optional leading record id before the first '('.
+    $tree_text =~ s/^\s*[^\(]+(?=\()//;
+
+    # Tips keep only the taxon name; the forSplit branch ids are removed.
+    $tree_text =~ s/([A-Za-z0-9_.-]+):B\d+/$1/g;
+
+    # Internal branches are converted from forSplit labels like "):B305"
+    # into standard Newick internal-node labels like ")95.000000".
+    $tree_text =~ s/\):([A-Z]\d+)(?![\w|])/')' . support_label($1, $support_ref)/ge;
+
+    return $tree_text;
+}
+
+sub support_label {
+    my ($branch_id, $support_ref) = @_;
+    my $support = exists $support_ref->{$branch_id} ? $support_ref->{$branch_id} : '0.0000000000';
+    return $support;
+}
+
+sub initialize_support_stats {
+    my %arg = @_;
+
+    my $fix_rows_ref      = $arg{fix_rows};
+    my $free_rows_ref     = $arg{free_rows};
+    my $fix_branches_ref  = $arg{fix_branches};
+    my $free_branches_ref = $arg{free_branches};
+    my $shared_genes_ref  = $arg{shared_genes};
+
+    my %stats;
+    for my $b (@{$fix_branches_ref}) {
+        $stats{$b} = {
+            n_shared_genes => scalar(@{$shared_genes_ref}),
+            n_fix_non_na => 0,
+            n_free_non_na => 0,
+        };
+    }
+
+    my %free_index = map { $free_branches_ref->[$_] => $_ } 0 .. $#{$free_branches_ref};
+
+    for my $gene (@{$shared_genes_ref}) {
+        next unless exists $fix_rows_ref->{$gene} && exists $free_rows_ref->{$gene};
+
+        my @fix_vals  = split(/\t/, $fix_rows_ref->{$gene}, -1);
+        my @free_vals = split(/\t/, $free_rows_ref->{$gene}, -1);
+
+        for my $i (0 .. $#{$fix_branches_ref}) {
+            my $branch    = $fix_branches_ref->[$i];
+            my $fix_value = defined $fix_vals[$i] ? $fix_vals[$i] : 'NA';
+
+            $stats{$branch}{n_fix_non_na}++ if $fix_value !~ /^NA/;
+
+            next unless exists $free_index{$branch};
+            my $free_idx   = $free_index{$branch};
+            my $free_value = defined $free_vals[$free_idx] ? $free_vals[$free_idx] : 'NA';
+            $stats{$branch}{n_free_non_na}++ if $free_value !~ /^NA/;
+        }
+    }
+
+    return %stats;
+}

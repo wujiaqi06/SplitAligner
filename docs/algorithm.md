@@ -44,11 +44,11 @@ This corresponds to:
 
 Multiple distinct species-tree branches may collapse into the same projected split after pruning absent taxa.
 
-This creates a fused branch pattern rather than a unique one-to-one correspondence.
+This means that the signal is represented through a fused branch rather than through a unique one-to-one correspondence.
 
 This corresponds to:
 
-- fused branch labels in the branch map
+- fused-branch labels in the branch map
 - `NA_fuse` during downstream matrix interpretation
 
 ---
@@ -98,6 +98,16 @@ These matrices can optionally include fused-branch completion.
 
 In the final stage, fixed-topology and free-topology outputs are compared to classify missing values into biologically meaningful categories.
 
+### Step 8. Compute branch-wise concordance
+
+Optionally, SplitAligner computes a branch-wise concordance score, `Support`, on the species-tree backbone after final classification.
+
+In the current implementation, for each branch `b`, `Support(b)` is computed on genes shared between the fixed-topology and free-topology inputs as:
+
+`100 × [free-topology non-NA count for branch b] / [fixed-topology non-NA count for branch b]`
+
+The resulting summary can also be written back onto the species tree as a branch-annotated output for visualization and downstream interpretation.
+
 ---
 
 ## Interpretation of NA states
@@ -111,10 +121,10 @@ Generic missing value before final classification.
 The projected species-tree branch becomes structurally absent after taxon pruning.
 
 ### `NA_fuse`
-The corresponding signal is not present as a primitive branch, but is captured by a fused projected branch.
+The branch is absent as a primitive branch but represented through a fused branch after taxon pruning.
 
 ### `NA_topo`
-The branch is present in the fixed-topology matrix but absent in the free-topology matrix, consistent with topology-induced discordance.
+The projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree, consistent with topology-induced discordance.
 
 ---
 
@@ -123,11 +133,33 @@ The branch is present in the fixed-topology matrix but absent in the free-topolo
 The key advantage of SplitAligner is that it separates three fundamentally different reasons why a branch may appear to be "missing":
 
 1. the branch is structurally undefined after projection,
-2. the signal is absorbed into a fused branch,
+2. the signal is represented through a fused branch,
 3. the signal is absent due to topological discordance.
 
 A naive branch comparison often conflates these cases.
 SplitAligner keeps them explicit.
+
+---
+
+## Relation to Other Branch Summaries
+
+SplitAligner is related to other split-based or concordance-style summaries in that it evaluates gene-tree information relative to a fixed species-tree backbone. Its emphasis, however, is different.
+
+Naive branch comparison typically asks whether a gene tree contains a branch that appears to correspond to a species-tree branch. This becomes unreliable when missing taxa alter the projected branch structure, because branch identity itself may no longer be preserved in a one-to-one way after pruning.
+
+By contrast, SplitAligner first asks whether the species-tree branch remains well-defined on the gene-specific taxon set. Only after this projection step does it evaluate whether the corresponding split is mapped, fused, structurally absent, or topologically absent.
+
+Similarly, concordance-oriented summaries are often designed to count supporting versus conflicting signal around species-tree branches. SplitAligner can contribute to that broader goal, but its primary role is to provide a standardized branch coordinate system and an explicit missingness decomposition at the gene-by-branch level.
+
+In short, SplitAligner is not only a support-summary method. It is a projection-aware branch reconciliation framework for constructing comparable gene-by-branch matrices under heterogeneous taxon coverage and gene-tree/species-tree discordance.
+
+---
+
+## Branch-Wise Support
+
+SplitAligner can optionally summarize branch-wise concordance on the species-tree backbone using `Support(b)`, defined in the current implementation as the ratio of free-topology non-NA counts to fixed-topology non-NA counts for the same branch on shared genes.
+
+This makes `Support` a branch-resolved cross-gene concordance summary on the projected branch coordinate system. It is therefore distinct from bootstrap values or posterior support measures, even when written to the species tree in the bootstrap position for compatibility with standard Newick viewers.
 
 ---
 

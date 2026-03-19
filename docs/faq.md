@@ -41,3 +41,17 @@ Yes. Species labels in the gene trees must be consistent with the species labels
 ## 7. Is SplitAligner intended for fixed-topology trees, free-topology trees, or both?
 
 Both. The matrix-generation step can be applied to either kind of gene tree input, and the final classification step is designed to compare the two.
+
+---
+
+## 8. What should a gene-tree input line look like?
+
+Each non-empty line should contain a gene identifier followed immediately by a Newick tree.
+
+Example:
+
+```text
+GeneA((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.1):0.1;
+```
+
+This line-based format allows SplitAligner to generate one split file per gene and to preserve gene identities throughout matrix construction.

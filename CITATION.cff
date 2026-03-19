@@ -6,7 +6,9 @@ authors:
   - family-names: "Wu"
     given-names: "Jiaqi"
     email: "wujiaqi@hiroshima-u.ac.jp"
+    affiliation: "Graduate School of Integrated Sciences for Life, Hiroshima University"
 repository-code: "https://github.com/wujiaqi06/SplitAligner"
+url: "https://github.com/wujiaqi06/SplitAligner"
 license: "MIT"
 version: "v1.0.0"
 date-released: "2026-03-17"
@@ -15,6 +17,7 @@ preferred-citation:
   authors:
     - family-names: "Wu"
       given-names: "Jiaqi"
+      affiliation: "Graduate School of Integrated Sciences for Life, Hiroshima University"
   title: "SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping"
   journal: "bioRxiv"
   year: 2026
