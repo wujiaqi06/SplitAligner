@@ -68,6 +68,28 @@ In that sense, SplitAligner is not only a branch-mapping tool. It also provides 
 
 ---
 
+## Definition Summary
+
+In finalized SplitAligner matrices, each gene-branch cell is interpreted as either `mapped` or as one of three explicit missingness states: `NA_struct`, `NA_fuse`, or `NA_topo`.
+
+For missing cells in the final matrices, these three `NA_*` labels are intended as mutually exclusive explanatory categories rather than as generic absence codes:
+
+- `NA_struct`: the projected branch is structurally undefined after taxon pruning
+- `NA_fuse`: the branch is not present as a primitive branch because its signal is represented on a fused branch
+- `NA_topo`: the branch is decisive under the fixed-topology baseline but absent from the free-topology gene tree
+
+This design allows absence states to be analyzed explicitly instead of being collapsed into a single undifferentiated `NA`.
+
+---
+
+## Determinism
+
+All gene-tree splits are mapped onto a fixed species-tree branch coordinate system defined by the input species-tree backbone.
+
+For a given species-tree backbone, branch indexing and branch-matrix construction are deterministic and reproducible: the same species-tree split axis is used for every gene, each gene tree is evaluated by projection onto that fixed coordinate system, and the final matrix is independent of gene-tree processing order.
+
+---
+
 ## Relation to Other Approaches
 
 Naive branch comparison typically asks whether a gene tree contains a branch that appears to correspond to a species-tree branch. That logic becomes unstable when taxon pruning changes the projected branch structure, because branch identity may no longer survive as a simple one-to-one correspondence.
@@ -241,6 +263,31 @@ The example workflow performs:
 4. optional `Support` calculation and species-tree annotation if `--species_tree` is provided
 
 Expected reference outputs are provided for the toy example in `examples/302mammal/expected/`.
+
+Minimal command-line usage from the repository root:
+
+```bash
+perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/free_tree.examples.nwk --label free
+perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/fix_tree.examples.nwk --label fix
+perl SplitAligner.pl --mode finalize --free free.matrix_with_fuse.txt --fix fix.matrix_with_fuse.txt --final_label final --species_tree species_tree.forSplit.nwk
+```
+
+---
+
+## Reading the Matrix
+
+Final matrices are gene-by-branch tables indexed by the fixed species-tree branch coordinate system. A small schematic example is shown below.
+
+| gene  | B1        | B2        | B3         |
+|-------|-----------|-----------|------------|
+| gene1 | 0.0512    | NA_topo   | NA_struct  |
+| gene2 | NA_fuse   | 0.0248    | 0.0183     |
+| gene3 | 0.0431    | 0.0305    | NA_struct  |
+
+- Numeric values indicate mapped branch-associated values for that gene and branch.
+- `NA_struct` means the projected branch is not structurally defined for that gene after taxon pruning.
+- `NA_fuse` means the branch is not represented as a primitive branch because its signal is captured by a fused branch.
+- `NA_topo` means the branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree.
 
 ---
 
