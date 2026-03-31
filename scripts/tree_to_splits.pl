@@ -196,6 +196,7 @@ sub collect_tip_taxa {
     my ($body) = @_;
     $body =~ s/\s+//g;
     $body =~ s/;//g;
+    $body = strip_internal_node_labels($body);
     $body =~ s/:B\d+//g;
     $body =~ s/:\d*\.?\d+(?:[eE][+-]?\d+)?//g;
     $body =~ s/\)\d*\.?\d+(?:[eE][+-]?\d+)?/)/g;
@@ -214,6 +215,7 @@ sub parse_tree_components {
     my %tree_hash;
     $body =~ s/\s+//g;
     $body =~ s/;$//;
+    $body = strip_internal_node_labels($body);
 
     my $terminal = $body;
     $terminal =~ s/[(),]+/\t/g;
@@ -254,6 +256,15 @@ sub parse_tree_components {
         }
     }
     return %tree_hash;
+}
+
+sub strip_internal_node_labels {
+    my ($body) = @_;
+    # Remove string node labels that appear immediately after a closing
+    # parenthesis, e.g. )N_11:0.5 -> ):0.5. This preserves branch lengths and
+    # SplitAligner species-tree branch tags such as ):B11.
+    $body =~ s/\)([^:;,\(\)]+)(?=[:),;]|$)/)/g;
+    return $body;
 }
 
 sub subtract_array_multiset {

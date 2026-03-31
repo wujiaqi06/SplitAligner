@@ -70,7 +70,14 @@ foreach my $fn (@files) {
             $fused_patterns{$pattern} = 1;
         }
 
-        $gene_branch{$gene_id}{$pattern} = $value;
+        if (exists $gene_branch{$gene_id}{$pattern}) {
+            $gene_branch{$gene_id}{$pattern} = _merge_pattern_values(
+                $gene_branch{$gene_id}{$pattern},
+                $value,
+            );
+        } else {
+            $gene_branch{$gene_id}{$pattern} = $value;
+        }
 
         # Update primitive max branch id
         for my $b (split(/\|/, $pattern)) {
@@ -153,6 +160,17 @@ sub _synthesize_fused_value {
         $sum += $v;
     }
     return $sum;
+}
+
+sub _merge_pattern_values {
+    my ($old, $new) = @_;
+
+    my $is_old_num = defined $old && $old =~ /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+    my $is_new_num = defined $new && $new =~ /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+    return $old + $new if $is_old_num && $is_new_num;
+    return $old if defined $old && (!defined $new || $new eq '');
+    return $new;
 }
 
 sub _cmp_branch_pattern {

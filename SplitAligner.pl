@@ -42,6 +42,19 @@
 #        <final_label>.support_b.txt
 #        <species_prefix>.support_b.nwk
 #
+#   3) finalize_fix
+#      Finalize a fixed-topology matrix when no free-topology comparator is
+#      available. NA_fuse is identified first; remaining NA is written as
+#      NA_struct.
+#
+#      Required arguments:
+#        --fix         <fix.matrix_with_fuse.txt>
+#        --final_label <output_prefix>
+#
+#      Output files:
+#        <fix>.na_fuse.txt
+#        <final_label>.fix.na_classified.txt
+#
 # Usage examples:
 #   SplitAligner.pl --mode matrix --species speciesTree302.nwk \
 #     --gene free_tree.examples.nwk --label free
@@ -82,7 +95,8 @@ die usage() unless defined $mode;
 my $scripts_dir = File::Spec->catdir($RealBin, 'scripts');
 for my $required_script (
     qw(label_species_tree.pl tree_to_splits.pl split_branch_label.pl
-       generate_branch_matrix.pl extract_na_fuse.pl confirm_na_structure.pl)
+       generate_branch_matrix.pl extract_na_fuse.pl confirm_na_structure.pl
+       classify_fix_missingness.pl)
 ) {
     my $path = File::Spec->catfile($scripts_dir, $required_script);
     die "[ERROR] Required helper script not found: $path\n" unless -e $path;
@@ -101,6 +115,12 @@ elsif ($mode eq 'finalize') {
         fix         => $fix_matrix,
         final_label => $final_label,
         species_tree => $species_tree,
+    );
+}
+elsif ($mode eq 'finalize_fix') {
+    run_finalize_fix_mode(
+        fix         => $fix_matrix,
+        final_label => $final_label,
     );
 }
 else {
@@ -247,6 +267,49 @@ sub run_finalize_mode {
 }
 
 # ------------------------------------------------------------------------------
+# finalize_fix mode
+# ------------------------------------------------------------------------------
+sub run_finalize_fix_mode {
+    my %arg = @_;
+
+    my $fix   = $arg{fix};
+    my $final = $arg{final_label};
+
+    die "[ERROR] --fix is required in --mode finalize_fix\n" unless defined $fix && $fix ne '';
+    die "[ERROR] --final_label is required in --mode finalize_fix\n" unless defined $final && $final ne '';
+
+    die "[ERROR] FIX matrix file not found: $fix\n" unless -e $fix;
+    validate_label($final, '--final_label');
+
+    print STDERR "[INFO] Running SplitAligner finalize_fix mode\n";
+    print STDERR "[INFO] FIX matrix  : $fix\n";
+
+    run_perl_script(
+        'extract_na_fuse.pl',
+        ['-i', $fix],
+        'Mark NA_fuse in fix matrix',
+    );
+
+    my $fix_na_fuse = default_na_fuse_name($fix);
+    die "[ERROR] Expected output not found: $fix_na_fuse\n" unless -e $fix_na_fuse;
+
+    run_perl_script(
+        'classify_fix_missingness.pl',
+        [
+            '--fix', $fix_na_fuse,
+            '--output', "$final.fix.na_classified.txt",
+        ],
+        'Classify remaining NA as NA_struct in fix-only mode',
+    );
+
+    die "[ERROR] Expected output not found after finalize_fix mode: $final.fix.na_classified.txt\n"
+        unless -e "$final.fix.na_classified.txt";
+
+    print STDERR "[INFO] Finalize_fix mode completed successfully\n";
+    print STDERR "[INFO] Generated: $final.fix.na_classified.txt\n";
+}
+
+# ------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------
 sub run_perl_script {
@@ -285,6 +348,7 @@ sub usage {
 Usage:
   SplitAligner.pl --mode matrix --species <species_tree.nwk> --gene <gene_trees.nwk> --label <label>
   SplitAligner.pl --mode finalize --free <free.matrix_with_fuse.txt> --fix <fix.matrix_with_fuse.txt> --final_label <prefix> [--species_tree <species_tree.forSplit.nwk>]
+  SplitAligner.pl --mode finalize_fix --fix <fix.matrix_with_fuse.txt> --final_label <prefix>
 
 Modes:
   matrix
@@ -325,6 +389,19 @@ Modes:
       <final_label>.free.na_classified.txt
       <final_label>.support_b.txt
       <species_prefix>.support_b.nwk
+
+  finalize_fix
+    Apply NA_fuse to a fixed-topology matrix, then classify all remaining NA
+    cells as NA_struct. This mode is intended for fix-only analyses when no
+    free-topology comparator is available.
+
+    Required:
+      --fix          FIX matrix_with_fuse file
+      --final_label  Output prefix for the classified FIX matrix
+
+    Outputs:
+      <fix>.na_fuse.txt
+      <final_label>.fix.na_classified.txt
 
 Notes:
   - Helper scripts are expected in: scripts/

@@ -161,14 +161,25 @@ SplitAligner/
         free_tree.examples.nwk
         fix_tree.examples.nwk
       expected/
+    benchmark/
+      benchmark.species_tree.nwk
+      benchmark.gene_trees.nwk
     preprint_302mammal/
       speciesTree302.nwk
       free.2275genes.nwk
       fix.2275genes.nwk
     run.sh
 
+  benchmark/
+    README.md
+    scripts/
+    inputs/
+    outputs/
+    docs/
+
   docs/
     algorithm.md
+    benchmark_rules.md
     io_spec.md
     faq.md
 ```
@@ -243,8 +254,12 @@ Two runnable example configurations are provided.
 
 - `examples/302mammal/`
   Small toy example for quick smoke testing and expected-output comparison.
+- `examples/benchmark/`
+  Benchmark species tree and gene trees used to test the Perl SplitAligner workflow on benchmark-constructed input trees.
 - `examples/preprint_302mammal/`
   Full 2275-gene dataset used for the preprint-scale 302-mammal analysis.
+
+The repository also includes a separate top-level `benchmark/` bundle. This is the R-side oracle package used to construct, inspect, and visualize the benchmark itself. It is intentionally kept separate from `examples/benchmark/`, which serves as the Perl SplitAligner test location for benchmark trees.
 
 From the repository root:
 
@@ -310,6 +325,12 @@ SplitAligner runs in two major stages.
 2. Compare fixed-topology and free-topology matrices on shared genes
 3. Classify remaining missing values as `NA_struct` or `NA_topo`
 4. Optionally compute branch-wise `Support` and write an annotated species tree
+
+### Stage 3: `finalize_fix`
+
+1. Mark primitive-branch `NA` cells that are explained by fused-branch signal as `NA_fuse`
+2. In fix-only analyses, rewrite all remaining `NA` cells as `NA_struct`
+3. Produce a fix-only classified matrix without invoking `NA_topo`
 
 ---
 
@@ -392,6 +413,30 @@ The final classification step is defined only for genes shared between the fixed
 When `--species_tree` is provided, SplitAligner also computes a branch-wise concordance score, `Support(b)`, on the species-tree backbone. In the current implementation, `Support(b)` is defined on genes shared between the fixed-topology and free-topology inputs as:
 
 `Support(b) = 100 * [number of non-NA entries for branch b in the free-topology matrix] / [number of non-NA entries for branch b in the fixed-topology matrix]`
+
+### `--mode finalize_fix`
+
+Finalize NA classification for a fixed-topology matrix when no free-topology comparator is available.
+
+Required arguments:
+
+- `--fix`: fixed-topology `matrix_with_fuse` file
+- `--final_label`: output prefix for the classified matrix
+
+Example:
+
+```bash
+perl SplitAligner.pl --mode finalize_fix \
+  --fix fix.matrix_with_fuse.txt \
+  --final_label final_fix
+```
+
+Main outputs:
+
+- `<fix>.na_fuse.txt`
+- `<final_label>.fix.na_classified.txt`
+
+In `finalize_fix`, SplitAligner first marks `NA_fuse` from fused-branch signal and then interprets all remaining `NA` cells as `NA_struct`. This mode does not define or emit `NA_topo`.
 
 ---
 
@@ -495,6 +540,7 @@ These categories are intended to prevent biologically distinct sources of missin
 Additional documentation is available in:
 
 - `docs/algorithm.md`
+- `docs/benchmark_rules.md`
 - `docs/io_spec.md`
 - `docs/faq.md`
 

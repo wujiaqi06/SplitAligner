@@ -118,7 +118,7 @@ for my $fname (@split_files) {
     open(my $IN,  '<', $in_path)  or die "[ERROR] Cannot read $in_path: $!\n";
     open(my $OUT, '>', $out_path) or die "[ERROR] Cannot write $out_path: $!\n";
 
-    my (%gene_split_to_value, %gene_branch_to_split);
+    my %gene_split_to_values;
 
     while (my $line = <$IN>) {
         chomp $line;
@@ -135,11 +135,10 @@ for my $fname (@split_files) {
             next;
         }
 
-        $gene_split_to_value{$canonical_split} = $val;
-        $gene_branch_to_split{$val} = $canonical_split; # kept for compatibility, though rarely used
+        push @{ $gene_split_to_values{$canonical_split} }, $val;
     }
 
-    my @gene_splits = sort keys %gene_split_to_value;
+    my @gene_splits = sort keys %gene_split_to_values;
     if (!@gene_splits) {
         print {$ERR} "[WARN] Empty gene split file: $fname\n";
         close $IN;
@@ -168,10 +167,7 @@ for my $fname (@split_files) {
         # Prune missing taxa from every split; drop invalid splits
         for my $branch_id (keys %projected_branch_to_split) {
             my $s = $projected_branch_to_split{$branch_id};
-            for my $sp (@missing_species) {
-                $s =~ s/\Q$sp\E//g;
-                $s =~ s/\.{4}/../g;
-            }
+            $s = prune_taxa_from_split($s, \@missing_species);
             my @parts = split(/\|\|/, $s);
             if (@parts != 2 || $parts[0] !~ /\w+/ || $parts[1] !~ /\w+/) {
                 delete $projected_branch_to_split{$branch_id};
@@ -186,7 +182,7 @@ for my $fname (@split_files) {
 
         for my $branch_id (sort keys %projected_branch_to_split) {
             my $proj_split = $projected_branch_to_split{$branch_id};
-            if (exists $gene_split_to_value{$proj_split}) {
+            if (exists $gene_split_to_values{$proj_split}) {
                 $hit++;
                 if (!exists $split_to_projected_branches{$proj_split}) {
                     $split_to_projected_branches{$proj_split} = $branch_id;
@@ -203,17 +199,21 @@ for my $fname (@split_files) {
 
         for my $gene_split (sort keys %split_to_projected_branches) {
             my $branch_pattern = $split_to_projected_branches{$gene_split};
-            print {$OUT} "$gene_split\t$branch_pattern\t$gene_split_to_value{$gene_split}\n";
-            $observed_branch_patterns{$branch_pattern} = 1;
+            for my $val (@{ $gene_split_to_values{$gene_split} }) {
+                print {$OUT} "$gene_split\t$branch_pattern\t$val\n";
+                $observed_branch_patterns{$branch_pattern} = 1;
+            }
         }
 
     } else {
         # No missing taxa: direct match against full axis (canonical splits)
         for my $axis_split (sort keys %branch_to_split) {
-            if (exists $gene_split_to_value{$axis_split}) {
+            if (exists $gene_split_to_values{$axis_split}) {
                 my $branch_id = $branch_to_split{$axis_split};
-                print {$OUT} "$axis_split\t$branch_id\t$gene_split_to_value{$axis_split}\n";
-                $observed_branch_patterns{$branch_id} = 1;
+                for my $val (@{ $gene_split_to_values{$axis_split} }) {
+                    print {$OUT} "$axis_split\t$branch_id\t$val\n";
+                    $observed_branch_patterns{$branch_id} = 1;
+                }
             } else {
                 # keep silent (original script printed to STDOUT); logging would be noisy for large data
             }
@@ -264,4 +264,17 @@ sub reorder_split {
     my $right = join('..', grep { $_ ne '' } @right);
 
     return ($left le $right) ? "$left||$right" : "$right||$left";
+}
+
+sub prune_taxa_from_split {
+    my ($split, $missing_ref) = @_;
+    my %missing = map { $_ => 1 } @{$missing_ref};
+
+    my @parts = split(/\|\|/, $split, -1);
+    return $split unless @parts == 2;
+
+    my @left = grep { $_ ne '' && !$missing{$_} } split(/\.\./, $parts[0], -1);
+    my @right = grep { $_ ne '' && !$missing{$_} } split(/\.\./, $parts[1], -1);
+
+    return join('||', join('..', @left), join('..', @right));
 }
