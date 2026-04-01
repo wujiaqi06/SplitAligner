@@ -165,12 +165,15 @@ SplitAligner/
         fix_tree.examples.nwk
       expected/
     benchmark/
-      benchmark.species_tree.nwk
-      benchmark.gene_trees.nwk
+      input/
+        benchmark.species_tree.nwk
+        benchmark.gene_trees.nwk
+      expected/
     preprint_302mammal/
-      speciesTree302.nwk
-      free.2275genes.nwk
-      fix.2275genes.nwk
+      input/
+        speciesTree302.nwk
+        free.2275genes.nwk
+        fix.2275genes.nwk
     run.sh
 
   benchmark/
@@ -258,9 +261,9 @@ Two runnable example configurations are provided.
 - `examples/302mammal/`
   Small toy example for quick smoke testing and expected-output comparison.
 - `examples/benchmark/`
-  Benchmark species tree and gene trees used to test the Perl SplitAligner workflow on benchmark-constructed input trees.
+  Benchmark species tree and gene trees used to test the Perl SplitAligner workflow on benchmark-constructed input trees, with packaged unrooted reference outputs.
 - `examples/preprint_302mammal/`
-  Full 2275-gene dataset used for the preprint-scale 302-mammal analysis.
+  Full 2275-gene dataset used for the preprint-scale 302-mammal analysis, packaged as analysis inputs without bundled expected outputs.
 
 The repository also includes a separate top-level `benchmark/` bundle. This is the R-side oracle package used to construct, inspect, and visualize the benchmark itself. It is intentionally kept separate from `examples/benchmark/`, which serves as the Perl SplitAligner test location for benchmark trees and is not part of the Perl runtime.
 
@@ -269,9 +272,10 @@ From the repository root:
 ```bash
 bash examples/run.sh toy
 bash examples/run.sh preprint
+bash examples/run.sh benchmark
 ```
 
-The `toy` run is intended for fast workflow checks. The `preprint` run reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree.
+The `toy` run is intended for fast workflow checks. The `preprint` run reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree. The `benchmark` run reproduces the packaged benchmark-alignment example in fix-only mode.
 
 The example workflow performs:
 
@@ -280,7 +284,7 @@ The example workflow performs:
 3. final NA classification by comparing the two matrix sets
 4. optional `Support` calculation and species-tree annotation if `--species_tree` is provided
 
-Expected reference outputs are provided for the toy example in `examples/302mammal/expected/`.
+Expected reference outputs are provided for the toy example in `examples/302mammal/expected/` and for the benchmark example in `examples/benchmark/expected/`.
 
 Minimal command-line usage from the repository root:
 
