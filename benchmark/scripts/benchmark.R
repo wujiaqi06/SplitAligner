@@ -52,6 +52,11 @@ N_TIPS_IF_SIM <- 10
 # set TREE_FILE to a Newick path; otherwise a random tree is simulated
 TREE_FILE <- file.path(base_dir, "inputs", "example_tree.nwk")
 
+# tree semantics:
+#   unrooted / rooted
+# Benchmark V1 defaults to unrooted semantics to match SplitAligner.
+TREE_SEMANTICS <- "unrooted"
+
 # schedule types:
 #   global_ordered / local_forward / local_backward / random
 SCHEDULE_TYPE <- "global_ordered"
@@ -66,7 +71,8 @@ MAX_DELETE_FRACTION <- 0.7
 # if > 0 and SCHEDULE_TYPE == "random", multiple replicates are run
 NREP_RANDOM <- 0L
 
-OUT_PREFIX <- file.path(base_dir, "outputs", "benchmark")
+OUT_DIR <- file.path(base_dir, "outputs", TREE_SEMANTICS)
+OUT_PREFIX <- file.path(OUT_DIR, "benchmark")
 
 write_species_tree_file <- function(tree, outfile) {
   writeLines(write.tree(tree), con = outfile)
@@ -84,27 +90,29 @@ write_gene_tree_file <- function(subtree_list, run_id, outfile) {
   }
 }
 
-prepare_benchmark_tree <- function(tr) {
+prepare_benchmark_tree <- function(tr,
+                                   tree_semantics = c("unrooted", "rooted")) {
+  tree_semantics <- match.arg(tree_semantics)
   if (is.null(tr$edge.length)) {
     stop("Benchmark tree must have branch lengths")
   }
   if (anyNA(tr$edge.length)) {
     stop("Benchmark tree contains missing branch lengths")
   }
-  if (is.rooted(tr)) {
+  if (identical(tree_semantics, "unrooted") && is.rooted(tr)) {
     tr <- unroot(tr)
   }
   tr
 }
 
-read_or_simulate_tree <- function(tree_file, n_tips, seed) {
+read_or_simulate_tree <- function(tree_file, n_tips, seed, tree_semantics) {
   set.seed(seed)
   if (!is.null(tree_file) && file.exists(tree_file)) {
     tr <- read.tree(tree_file)
     if (inherits(tr, "multiPhylo")) stop("TREE_FILE must contain exactly one tree")
-    return(prepare_benchmark_tree(tr))
+    return(prepare_benchmark_tree(tr, tree_semantics = tree_semantics))
   }
-  prepare_benchmark_tree(rtree(n_tips))
+  prepare_benchmark_tree(rtree(n_tips), tree_semantics = tree_semantics)
 }
 
 run_one_schedule <- function(full_tree2,
@@ -131,7 +139,7 @@ run_one_schedule <- function(full_tree2,
   )
 
   axis_ids <- as.character(identity_tbl$branch_id)
-  state <- init_graph_state(identity_tbl, root_label)
+  state <- init_graph_state(identity_tbl, root_label, tree_semantics = TREE_SEMANTICS)
 
   table_rows <- list()
   event_rows <- list()
@@ -191,12 +199,14 @@ run_one_schedule <- function(full_tree2,
   )
 }
 
-full_tree <- read_or_simulate_tree(TREE_FILE, N_TIPS_IF_SIM, SEED)
-frozen <- freeze_full_tree_identity(full_tree)
+full_tree <- read_or_simulate_tree(TREE_FILE, N_TIPS_IF_SIM, SEED, TREE_SEMANTICS)
+frozen <- freeze_full_tree_identity(full_tree, tree_semantics = TREE_SEMANTICS)
 full_tree2 <- frozen$full_tree
 identity_tbl <- frozen$identity_tbl
 root_label <- frozen$root_label
 tip_order_labels <- full_tree2$tip.label
+
+dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 if (identical(SCHEDULE_TYPE, "random") && NREP_RANDOM > 0L) {
   all_tables <- list()

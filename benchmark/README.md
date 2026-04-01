@@ -37,24 +37,31 @@ The R-side oracle must remain structurally independent of SplitAligner.
   - `oracle_utils.R`: graph-only oracle utilities
   - `plot_fulltree_collapse.R`: cumulative collapse plot on the full tree
 - `outputs/`
-  - benchmark tables
-  - species tree and gene tree files for SplitAligner alignment
-  - plotted PDF outputs
+  - `unrooted/`
+  - `rooted/`
+  - benchmark tables, tree files, and plotted PDFs separated by tree semantics
 - `docs/`
   - benchmark specification and tasklist
 
 ## Main Inputs and Outputs
 
-Primary generated files in `outputs/`:
+Primary generated files are written into one of:
+
+- `outputs/unrooted/`
+- `outputs/rooted/`
+
+Each semantics-specific output directory contains:
 
 - `benchmark.species_tree.nwk`
 - `benchmark.gene_trees.nwk`
 - `benchmark.table.txt`
 - `benchmark.oracle_events.tsv`
 - `benchmark.trajectory.tsv`
-- `fulltree_collapse.pdf`
+- `benchmark.fulltree_collapse.pdf`
 
 ## Run
+
+Edit `scripts/benchmark.R` to choose `TREE_SEMANTICS <- "unrooted"` or `TREE_SEMANTICS <- "rooted"`. Benchmark V1 defaults to `unrooted` to match SplitAligner. By default, the packaged run therefore writes into `outputs/unrooted/`.
 
 From this folder:
 
@@ -62,7 +69,7 @@ From this folder:
 Rscript scripts/benchmark.R
 ```
 
-This writes the benchmark tables into `outputs/` and automatically generates `fulltree_collapse.pdf`.
+This writes the benchmark tables into `outputs/unrooted/` or `outputs/rooted/` and automatically generates a matching collapse PDF in the same directory.
 
 If needed, the plotting step can also be rerun by itself:
 
@@ -75,4 +82,5 @@ Rscript scripts/plot_fulltree_collapse.R
 - The packaged default is `MAX_DELETE_FRACTION = 0.7` because it produces a clearer collapse trajectory for visualization and a more expressive benchmark figure.
 - `species_tree.nwk` and `gene_trees.nwk` are formatted to help align the benchmark with the Perl SplitAligner workflow.
 - The benchmark tables are intended for direct sanity checking: any numeric cell that has already absorbed contraction-induced branch-length summation should instead have been marked `NA_fuse`.
+- The rooted and unrooted modes are intentionally different. In `unrooted` mode, the benchmark now performs explicit pseudo-root normalization and unrooted degree-2 contraction, so branches that become indistinguishable only under the unrooted interpretation are merged exactly as in SplitAligner. In `rooted` mode, the benchmark retains rooted branch distinctions and therefore serves as a separate, biologically interpretable companion analysis rather than as the primary SplitAligner comparison target.
 - Historical experiments and failed drafts are intentionally excluded from this packaged folder.

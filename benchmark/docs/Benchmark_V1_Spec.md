@@ -42,6 +42,40 @@ The unified coordinate axis is the set of all primitive edges on the full specie
 
 All oracle outputs, SplitAligner outputs, and evaluation metrics must be mapped back to this full-tree primitive-edge axis. External branch identifiers should be standardized to SplitAligner branch labels (`Bxxx`) using the species-tree branch map as the authoritative mapping source.
 
+## 2.1 Unrooted versus rooted semantics
+
+Benchmark V1 adopts unrooted branch semantics as its primary standard.
+
+This choice follows the intended semantics of SplitAligner itself: species-tree and gene-tree branch identity are interpreted on an unrooted tree, and any temporary binary root introduced by tree I/O or plotting software must be treated as an artificial representation device rather than as a biologically meaningful branch-defining root.
+
+Consequences:
+
+- under unrooted semantics, pseudo-root artifacts must not create extra persistent primitive branch identities
+- if deletion near an artificial binary root causes previously distinct primitive edges to become indistinguishable under the unrooted interpretation, the SplitAligner-style fused interpretation is the correct one for Benchmark V1
+- Benchmark V1 therefore treats SplitAligner's unrooted semantics as the primary comparison target
+
+At the same time, rooted-tree semantics remain biologically meaningful in some settings. A truly rooted tree can preserve branch distinctions that would collapse under an unrooted interpretation.
+
+Therefore:
+
+- the current Benchmark V1 is the unrooted benchmark
+- rooted-tree benchmarking should be implemented as a separate companion module rather than mixed into the unrooted benchmark definition
+- any future rooted benchmark must explicitly state that its branch-identity rules are different from the unrooted SplitAligner benchmark
+
+### 2.1.1 Implementation note: why unrooted needed a separate contraction rule
+
+During implementation, it became clear that unrooted correctness cannot be obtained by changing only the input entry point or by merely calling `unroot()` before running a rooted contraction routine.
+
+The reason is structural. After pruning near a pseudo-root, an unrooted tree may require additional degree-2 contraction across root-adjacent edges, and this can create fused branch identities that are valid under the unrooted interpretation but would not appear under a rooted parent/upstream traversal.
+
+Therefore:
+
+- the unrooted benchmark must explicitly normalize pseudo-root artifacts
+- the unrooted benchmark must apply an unrooted degree-2 contraction rule on the evolving graph state
+- the rooted benchmark may retain branch distinctions that remain meaningful only under rooted semantics
+
+This distinction is not a software bug but a semantics issue. In the current implementation, the unrooted mode is designed to match SplitAligner's unrooted branch-identity rules, whereas the rooted mode is preserved as a separate companion benchmark for rooted-tree interpretation.
+
 ## 3. Definitions
 
 ### 3.1 Full tree and pruning series

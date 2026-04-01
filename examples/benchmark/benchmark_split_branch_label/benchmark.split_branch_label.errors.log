@@ -1,0 +1,7 @@
+[SUMMARY] main_step1.split.txt	hit=16	miss=0	missing_taxa=t10
+[SUMMARY] main_step2.split.txt	hit=15	miss=0	missing_taxa=t1,t10
+[SUMMARY] main_step3.split.txt	hit=14	miss=0	missing_taxa=t1,t10,t8
+[SUMMARY] main_step4.split.txt	hit=13	miss=0	missing_taxa=t1,t10,t7,t8
+[SUMMARY] main_step5.split.txt	hit=11	miss=0	missing_taxa=t1,t10,t4,t7,t8
+[SUMMARY] main_step6.split.txt	hit=6	miss=0	missing_taxa=t1,t10,t4,t7,t8,t9
+[SUMMARY] main_step7.split.txt	hit=5	miss=0	missing_taxa=t1,t10,t4,t5,t7,t8,t9

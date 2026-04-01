@@ -8,8 +8,10 @@ suppressPackageStartupMessages({
 
 ROOT_SENTINEL <- "__ROOT__"
 
-freeze_full_tree_identity <- function(full_tree) {
+freeze_full_tree_identity <- function(full_tree,
+                                      tree_semantics = c("unrooted", "rooted")) {
   stopifnot(inherits(full_tree, "phylo"))
+  tree_semantics <- match.arg(tree_semantics)
 
   n_tip <- length(full_tree$tip.label)
   n_node <- full_tree$Nnode
@@ -49,7 +51,8 @@ freeze_full_tree_identity <- function(full_tree) {
   list(
     full_tree = full_tree,
     identity_tbl = identity_tbl,
-    root_label = root_label
+    root_label = root_label,
+    tree_semantics = tree_semantics
   )
 }
 
@@ -203,7 +206,9 @@ build_subtree_series <- function(full_tree, schedule_tbl) {
   list(subtree_list = subtree_list, subtree_meta_tbl = schedule_tbl)
 }
 
-init_graph_state <- function(identity_tbl, root_label) {
+init_graph_state <- function(identity_tbl, root_label,
+                             tree_semantics = c("unrooted", "rooted")) {
+  tree_semantics <- match.arg(tree_semantics)
   edges <- identity_tbl[, c("parent_label", "child_label", "branch_length", "branch_type")]
   edges$parent_label[edges$parent_label == root_label] <- ROOT_SENTINEL
   edges$member_ids <- lapply(identity_tbl$branch_id, function(x) x)
@@ -212,7 +217,9 @@ init_graph_state <- function(identity_tbl, root_label) {
 
   list(
     edges = edges,
-    next_edge_uid = nrow(edges) + 1L
+    next_edge_uid = nrow(edges) + 1L,
+    tree_semantics = tree_semantics,
+    tip_labels = as.character(identity_tbl$branch_id[identity_tbl$branch_type == "terminal"])
   )
 }
 
@@ -232,6 +239,20 @@ find_child_edges_of_parent <- function(state, parent_label) {
   which(state$edges$parent_label == parent_label)
 }
 
+find_incident_edges_of_node <- function(state, node_label) {
+  which(state$edges$parent_label == node_label | state$edges$child_label == node_label)
+}
+
+other_endpoint <- function(state, row_idx, node_label) {
+  if (state$edges$parent_label[row_idx] == node_label) {
+    return(as.character(state$edges$child_label[row_idx]))
+  }
+  if (state$edges$child_label[row_idx] == node_label) {
+    return(as.character(state$edges$parent_label[row_idx]))
+  }
+  stop(sprintf("Node %s is not incident to row %d", node_label, row_idx))
+}
+
 promote_root_singleton <- function(state, parent_label) {
   child_rows <- find_child_edges_of_parent(state, parent_label)
   if (length(child_rows) == 1L) {
@@ -240,7 +261,140 @@ promote_root_singleton <- function(state, parent_label) {
   state
 }
 
-delete_tip_once <- function(state, deleted_tip_label) {
+merge_rows_into_edge <- function(state, row_a, row_b, parent_label, child_label) {
+  len_a <- state$edges$branch_length[row_a]
+  len_b <- state$edges$branch_length[row_b]
+  merged_length <- if (all(is.na(c(len_a, len_b)))) NA_real_ else sum(c(len_a, len_b), na.rm = TRUE)
+  merged_members <- sort(unique(c(
+    state$edges$member_ids[[row_a]],
+    state$edges$member_ids[[row_b]]
+  )))
+  child_type <- if (state$edges$branch_type[row_a] == "internal" ||
+                    state$edges$branch_type[row_b] == "internal") {
+    "internal"
+  } else {
+    "terminal"
+  }
+
+  drop_rows <- sort(c(row_a, row_b), decreasing = TRUE)
+  for (r in drop_rows) {
+    state$edges <- state$edges[-r, , drop = FALSE]
+  }
+
+  state$edges <- rbind(
+    state$edges,
+    data.frame(
+      parent_label = parent_label,
+      child_label = child_label,
+      branch_length = merged_length,
+      branch_type = child_type,
+      member_ids = I(list(merged_members)),
+      edge_uid = state$next_edge_uid,
+      stringsAsFactors = FALSE
+    )
+  )
+  state$next_edge_uid <- state$next_edge_uid + 1L
+  rownames(state$edges) <- NULL
+  state
+}
+
+choose_edge_orientation <- function(state, endpoint_a, endpoint_b) {
+  endpoints <- c(as.character(endpoint_a), as.character(endpoint_b))
+
+  if (ROOT_SENTINEL %in% endpoints) {
+    other <- setdiff(endpoints, ROOT_SENTINEL)
+    return(list(parent_label = ROOT_SENTINEL, child_label = other[1]))
+  }
+
+  is_tip <- endpoints %in% state$tip_labels
+  if (sum(is_tip) == 1L) {
+    return(list(
+      parent_label = endpoints[!is_tip][1],
+      child_label = endpoints[is_tip][1]
+    ))
+  }
+
+  endpoints <- sort(endpoints)
+  list(parent_label = endpoints[1], child_label = endpoints[2])
+}
+
+normalize_root_unrooted <- function(state) {
+  if (!identical(state$tree_semantics, "unrooted")) {
+    return(state)
+  }
+
+  repeat {
+    root_rows <- find_child_edges_of_parent(state, ROOT_SENTINEL)
+    if (length(root_rows) <= 1L) {
+      state <- promote_root_singleton(state, ROOT_SENTINEL)
+      break
+    }
+    if (length(root_rows) != 2L) {
+      break
+    }
+
+    root_edges <- state$edges[root_rows, , drop = FALSE]
+    ord <- order(root_edges$child_label, root_edges$edge_uid)
+    root_rows <- root_rows[ord]
+
+    parent_side <- root_rows[1]
+    child_side <- root_rows[2]
+    parent_label <- state$edges$child_label[parent_side]
+    child_label <- state$edges$child_label[child_side]
+
+    state <- merge_rows_into_edge(
+      state = state,
+      row_a = parent_side,
+      row_b = child_side,
+      parent_label = parent_label,
+      child_label = child_label
+    )
+  }
+
+  state
+}
+
+contract_degree2_nodes_unrooted <- function(state) {
+  if (!identical(state$tree_semantics, "unrooted")) {
+    return(state)
+  }
+
+  repeat {
+    node_labels <- sort(unique(c(state$edges$parent_label, state$edges$child_label)))
+    node_labels <- setdiff(node_labels, c(ROOT_SENTINEL, state$tip_labels))
+
+    contracted <- FALSE
+    for (node_label in node_labels) {
+      incident_rows <- find_incident_edges_of_node(state, node_label)
+      if (length(incident_rows) != 2L) {
+        next
+      }
+
+      endpoint_a <- other_endpoint(state, incident_rows[1], node_label)
+      endpoint_b <- other_endpoint(state, incident_rows[2], node_label)
+      orient <- choose_edge_orientation(state, endpoint_a, endpoint_b)
+
+      state <- merge_rows_into_edge(
+        state = state,
+        row_a = incident_rows[1],
+        row_b = incident_rows[2],
+        parent_label = orient$parent_label,
+        child_label = orient$child_label
+      )
+      state <- normalize_root_unrooted(state)
+      contracted <- TRUE
+      break
+    }
+
+    if (!contracted) {
+      break
+    }
+  }
+
+  state
+}
+
+delete_tip_once_rooted <- function(state, deleted_tip_label) {
   tip_row <- find_child_edge(state, deleted_tip_label)
   if (length(tip_row) != 1L) {
     stop(sprintf("Expected exactly one current tip edge for %s", deleted_tip_label))
@@ -267,33 +421,13 @@ delete_tip_once <- function(state, deleted_tip_label) {
     sib_row <- sibling_rows[1]
     parent_of_parent <- state$edges$parent_label[up_row]
     child_label <- state$edges$child_label[sib_row]
-    child_type <- state$edges$branch_type[sib_row]
-    merged_members <- sort(unique(c(
-      state$edges$member_ids[[sib_row]],
-      state$edges$member_ids[[up_row]]
-    )))
-    len_a <- state$edges$branch_length[sib_row]
-    len_b <- state$edges$branch_length[up_row]
-    merged_length <- if (all(is.na(c(len_a, len_b)))) NA_real_ else sum(c(len_a, len_b), na.rm = TRUE)
-
-    drop_rows <- sort(c(sib_row, up_row), decreasing = TRUE)
-    for (r in drop_rows) {
-      state$edges <- state$edges[-r, , drop = FALSE]
-    }
-
-    state$edges <- rbind(
-      state$edges,
-      data.frame(
-        parent_label = parent_of_parent,
-        child_label = child_label,
-        branch_length = merged_length,
-        branch_type = child_type,
-        member_ids = I(list(merged_members)),
-        edge_uid = state$next_edge_uid,
-        stringsAsFactors = FALSE
-      )
+    state <- merge_rows_into_edge(
+      state = state,
+      row_a = sib_row,
+      row_b = up_row,
+      parent_label = parent_of_parent,
+      child_label = child_label
     )
-    state$next_edge_uid <- state$next_edge_uid + 1L
   } else if (length(sibling_rows) == 1L && identical(parent_label, ROOT_SENTINEL)) {
     state <- promote_root_singleton(state, ROOT_SENTINEL)
   }
@@ -312,6 +446,51 @@ delete_tip_once <- function(state, deleted_tip_label) {
       local_up_parent_label = local_up_parent_label
     )
   )
+}
+
+delete_tip_once_unrooted <- function(state, deleted_tip_label) {
+  tip_rows <- find_incident_edges_of_node(state, deleted_tip_label)
+  if (length(tip_rows) != 1L) {
+    stop(sprintf("Expected exactly one current incident edge for tip %s", deleted_tip_label))
+  }
+
+  tip_row <- tip_rows[1]
+  parent_label <- other_endpoint(state, tip_row, deleted_tip_label)
+  incident_rows <- setdiff(find_incident_edges_of_node(state, parent_label), tip_row)
+
+  local_e_term <- deleted_tip_label
+  local_e_sib <- if (length(incident_rows) >= 1L) member_string(state$edges$member_ids[[incident_rows[1]]]) else NA_character_
+  local_e_up <- if (length(incident_rows) >= 2L) member_string(state$edges$member_ids[[incident_rows[2]]]) else NA_character_
+  local_sib_child_label <- if (length(incident_rows) >= 1L) as.character(state$edges$child_label[incident_rows[1]]) else NA_character_
+  local_sib_parent_label <- if (length(incident_rows) >= 1L) as.character(state$edges$parent_label[incident_rows[1]]) else NA_character_
+  local_up_child_label <- if (length(incident_rows) >= 2L) as.character(state$edges$child_label[incident_rows[2]]) else NA_character_
+  local_up_parent_label <- if (length(incident_rows) >= 2L) as.character(state$edges$parent_label[incident_rows[2]]) else NA_character_
+
+  state$edges <- state$edges[-tip_row, , drop = FALSE]
+  state <- normalize_root_unrooted(state)
+  state <- contract_degree2_nodes_unrooted(state)
+
+  rownames(state$edges) <- NULL
+  list(
+    state = state,
+    event = list(
+      deleted_tip_parent_label = as.character(parent_label),
+      local_e_term = local_e_term,
+      local_e_sib = local_e_sib,
+      local_e_up = local_e_up,
+      local_sib_child_label = local_sib_child_label,
+      local_sib_parent_label = local_sib_parent_label,
+      local_up_child_label = local_up_child_label,
+      local_up_parent_label = local_up_parent_label
+    )
+  )
+}
+
+delete_tip_once <- function(state, deleted_tip_label) {
+  if (identical(state$tree_semantics, "unrooted")) {
+    return(delete_tip_once_unrooted(state, deleted_tip_label))
+  }
+  delete_tip_once_rooted(state, deleted_tip_label)
 }
 
 state_to_classification <- function(state, identity_tbl) {

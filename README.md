@@ -12,7 +12,7 @@ SplitAligner explicitly distinguishes biologically meaningful forms of missingne
 
 This repository contains the SplitAligner source code, example datasets, and documentation needed to reproduce the core branch-mapping workflow.
 
-Current release: `v1.0.0`
+Current release: `v1.1.1`
 
 ---
 
@@ -66,6 +66,8 @@ This shift turns branch reconciliation from a naive tree-comparison problem into
 
 In that sense, SplitAligner is not only a branch-mapping tool. It also provides a branch coordinate system for downstream comparative analyses, where each gene-branch cell can be interpreted within an explicit missingness model rather than as an undifferentiated absence.
 
+In practice, SplitAligner asks a simple question for each gene and each species-tree branch: is this branch still distinguishable, fused, structurally undefined, or topologically absent?
+
 ---
 
 ## Definition Summary
@@ -115,12 +117,13 @@ Similarly, concordance-style summaries are often used to count supporting and co
 
 ```mermaid
 flowchart LR
-    A["Species tree"] --> B["Projected split space"]
-    C["Gene trees"] --> D["Per-gene split mapping"]
+    A["Species tree backbone"] --> B["Species-tree split axis"]
+    C["Gene trees<br/>(free and/or fixed)"] --> D["Per-gene taxon pruning + split projection"]
     B --> D
-    D --> E["Gene-by-branch matrices"]
-    E --> F["NA_struct / NA_fuse / NA_topo"]
-    F --> G["Support table + annotated tree"]
+    D --> E["Gene-by-branch matrices<br/>(with primitive and fused branches)"]
+    E --> F["finalize / finalize_fix"]
+    F --> G["mapped / NA_struct / NA_fuse / NA_topo"]
+    F --> H["Support table + annotated tree"]
 ```
 
 ---
@@ -131,7 +134,7 @@ flowchart LR
 - Explicit handling of missing taxa during per-gene projection
 - Recognition of fused branch patterns after taxon pruning
 - Matrix generation for fixed-topology and free-topology gene-tree sets
-- Final classification of `NA`, `NA_fuse`, `NA_struct`, and `NA_topo`
+- Final classification of generic missing cells into `NA_fuse`, `NA_struct`, and `NA_topo`
 - Optional branch-wise `Support` summary and annotated species tree at the end of `finalize`
 - Reproducible example workflow included in `examples/302mammal/`
 
@@ -259,7 +262,7 @@ Two runnable example configurations are provided.
 - `examples/preprint_302mammal/`
   Full 2275-gene dataset used for the preprint-scale 302-mammal analysis.
 
-The repository also includes a separate top-level `benchmark/` bundle. This is the R-side oracle package used to construct, inspect, and visualize the benchmark itself. It is intentionally kept separate from `examples/benchmark/`, which serves as the Perl SplitAligner test location for benchmark trees.
+The repository also includes a separate top-level `benchmark/` bundle. This is the R-side oracle package used to construct, inspect, and visualize the benchmark itself. It is intentionally kept separate from `examples/benchmark/`, which serves as the Perl SplitAligner test location for benchmark trees and is not part of the Perl runtime.
 
 From the repository root:
 
@@ -285,6 +288,13 @@ Minimal command-line usage from the repository root:
 perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/free_tree.examples.nwk --label free
 perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/fix_tree.examples.nwk --label fix
 perl SplitAligner.pl --mode finalize --free free.matrix_with_fuse.txt --fix fix.matrix_with_fuse.txt --final_label final --species_tree species_tree.forSplit.nwk
+```
+
+Fix-only example:
+
+```bash
+perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/fix_tree.examples.nwk --label fix
+perl SplitAligner.pl --mode finalize_fix --fix fix.matrix_with_fuse.txt --final_label final_fix
 ```
 
 ---
@@ -565,13 +575,14 @@ We expect this representation to support future extensions of branch-wise compar
 
 ## Citation
 
-If you use SplitAligner in your work, please cite the software repository and the associated preprint.
+If you use SplitAligner in your work, please cite both the software repository and the associated preprint.
 
-Preferred citation:
+Preprint:
 
 > Wu J. 2026. SplitAligner: A Gene-Species Tree Reconciliation Framework Using Split-Based Branch Mapping. bioRxiv. https://doi.org/10.64898/2026.02.24.707838
 
-GitHub citation metadata is provided in `CITATION.cff`.
+Repository citation metadata:
+- `CITATION.cff`
 
 ---
 

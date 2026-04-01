@@ -19,13 +19,23 @@ find_script_dir <- function() {
 
 script_dir <- find_script_dir()
 base_dir <- dirname(script_dir)
-out_dir <- file.path(base_dir, "outputs")
+tree_semantics <- if (exists("TREE_SEMANTICS", inherits = TRUE)) {
+  get("TREE_SEMANTICS", inherits = TRUE)
+} else {
+  "unrooted"
+}
+out_dir <- file.path(base_dir, "outputs", tree_semantics)
+out_prefix <- if (exists("OUT_PREFIX", inherits = TRUE)) {
+  get("OUT_PREFIX", inherits = TRUE)
+} else {
+  file.path(out_dir, "benchmark")
+}
 
-TREE_FILE  <- file.path(out_dir, "benchmark.species_tree.nwk")
-TABLE_TXT  <- file.path(out_dir, "benchmark.table.txt")
-EVENTS_TSV <- file.path(out_dir, "benchmark.oracle_events.tsv")
+TREE_FILE <- paste0(out_prefix, ".species_tree.nwk")
+TABLE_TXT <- paste0(out_prefix, ".table.txt")
+EVENTS_TSV <- paste0(out_prefix, ".oracle_events.tsv")
 
-OUT_PDF <- file.path(out_dir, "fulltree_collapse.pdf")
+OUT_PDF <- file.path(out_dir, "benchmark.fulltree_collapse.pdf")
 
 tr0 <- read.tree(TREE_FILE)
 
