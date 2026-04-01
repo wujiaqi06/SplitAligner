@@ -115,7 +115,7 @@ for (r in rownames(tab)) {
   }
   
   # root symmetry patch
-  if (nrow(ev_i) == 1) {
+  if (identical(tree_semantics, "rooted") && nrow(ev_i) == 1) {
     if (!is.na(ev_i$deleted_tip_parent_label) && ev_i$deleted_tip_parent_label == "__ROOT__") {
       extra <- as.character(ev_i$local_e_sib)
       if (!is.na(extra) && extra != "" && extra != "NA") {

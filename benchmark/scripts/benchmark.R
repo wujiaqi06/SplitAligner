@@ -139,7 +139,7 @@ run_one_schedule <- function(full_tree2,
   )
 
   axis_ids <- as.character(identity_tbl$branch_id)
-  state <- init_graph_state(identity_tbl, root_label, tree_semantics = TREE_SEMANTICS)
+  state <- init_graph_state(identity_tbl, root_label, tree_semantics = frozen$tree_semantics)
 
   table_rows <- list()
   event_rows <- list()
