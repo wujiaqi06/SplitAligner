@@ -17,7 +17,7 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 ## Deliverables
 
 - `Benchmark_V1_Spec.md`
-- `oracle_proj.tsv`
+- `oracle_states.tsv`
 - `oracle_events.tsv`
 - `trajectory.tsv`
 - ordered-pruning input gene-tree series
@@ -60,17 +60,15 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 
 ### 5. State-level oracle
 
-- compute full splits for all primitive edges in `T0`
-- project all primitive edges onto each retained set `S_i`
-- classify `NA_struct`
-- canonicalize `proj_key`
-- derive fusion partitions from projected-split equivalence classes
-- write `oracle_proj.tsv`
+- track primitive-edge survival on the full-tree axis through pruning and contraction
+- classify `NA_struct` by explicit node/edge state tracking
+- derive fusion partitions from contraction-induced merge classes
+- write `oracle_states.tsv`
 
 ### 6. Closure checks
 
 - verify all primitive edges are partitioned into `NA_struct` and non-`NA`
-- verify all non-`NA` edges are fully partitioned by `proj_key`
+- verify all non-`NA` edges are fully partitioned by merge-class membership
 - verify no overlaps and no omissions
 
 ### 7. Trajectory summaries

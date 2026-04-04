@@ -15,6 +15,18 @@ Because `NA_struct` and `NA_fuse` are defined here as consequences of pruning an
 - The R benchmark must never compute projected splits, split keys, or split-space equivalence classes.
 - Split logic belongs only to the Perl SplitAligner workflow.
 
+## Development Note
+
+Why the benchmark oracle must remain structurally independent:
+
+1. Initial implementations repeatedly drifted back toward split-based logic, which would have compromised oracle independence from SplitAligner.
+2. Once a split-free R-side oracle was enforced, it became clear that tip deletion induces structural collapse and degree-2 contraction, causing `NA_fuse` spillover beyond the immediately deleted local region.
+3. Purely local, recursive, or offspring-node-based heuristics were not sufficient:
+   - recursive propagation overcalled entire clades,
+   - local offspring tracking missed higher-level spillover,
+   - global deletion without explicit edge tracing still missed fused-edge cases.
+4. The final benchmark therefore uses only tree surgery, degree-2 contraction, and explicit node/edge tracking to infer `NA_struct` and `NA_fuse`, without relying on split-based representations.
+
 ## Purpose
 
 This benchmark evaluates `NA_struct` and `NA_fuse` under fixed-topology pruning on a frozen full-tree primitive-edge axis.
