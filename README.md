@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/SplitAligner_logo.png" alt="SplitAligner logo" width="720">
+</p>
+
 # SplitAligner
 
 **SplitAligner** is a split-based gene tree-species tree reconciliation framework for robust branch mapping under missing taxa, fused branches, and gene-tree/species-tree discordance.
