@@ -534,7 +534,7 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `<final_label>.free.na_classified.txt`
   - free-topology matrix after final NA classification
 - `<final_label>.support_b.txt`
-  - branch-wise `Support` summary, including fixed-matrix and free-matrix non-NA counts
+  - branch-wise `Support` summary with columns `branch_id`, `branch_type`, `n_shared_genes`, `n_fix_non_na`, `n_free_non_na`, `support_percent`, and `discordance_percent`
 - `<species_prefix>.support_b.nwk`
   - standard Newick tree with internal-node `Support` values written in the bootstrap position
 

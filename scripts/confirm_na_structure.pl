@@ -37,6 +37,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 use File::Basename qw(basename);
+use File::Spec;
 
 my ($fix_matrix_path, $free_matrix_path, $species_tree_path, $out_prefix);
 
@@ -115,13 +116,25 @@ die "[ERROR] FREE matrix appears empty or missing header: $free_matrix_path\n"
 # -------------------------
 # Sanity check: branch axis
 # -------------------------
-my $fix_axis  = join("_", sort @fix_branches);
-my $free_axis = join("_", sort @free_branches);
+my @fix_primitive_branches  = primitive_branch_axis(\@fix_branches);
+my @free_primitive_branches = primitive_branch_axis(\@free_branches);
+
+die "[ERROR] No primitive species-tree branches were found in FIX matrix header.\n"
+    unless @fix_primitive_branches;
+die "[ERROR] No primitive species-tree branches were found in FREE matrix header.\n"
+    unless @free_primitive_branches;
+
+my $fix_axis  = join("\t", @fix_primitive_branches);
+my $free_axis = join("\t", @free_primitive_branches);
 
 if ($fix_axis eq $free_axis) {
-    print STDERR "[INFO] Branch axes matched between fix and free matrices.\n";
+    print STDERR "[INFO] Primitive branch axes matched between fix and free matrices.\n";
 } else {
-    print STDERR "[WARN] Branch axes DO NOT match between fix and free matrices.\n";
+    my $fix_count  = scalar(@fix_primitive_branches);
+    my $free_count = scalar(@free_primitive_branches);
+    die "[ERROR] Primitive branch axes DO NOT match between fix and free matrices. ".
+        "FIX has $fix_count primitive branches, FREE has $free_count. ".
+        "Support/discordance classification requires the same primitive species-tree branch axis and order.\n";
 }
 
 # -------------------------
@@ -208,7 +221,7 @@ if (defined $species_tree_path && $species_tree_path ne '') {
     die "[ERROR] Species tree file not found: $species_tree_path\n" unless -e $species_tree_path;
     write_support_outputs(
         stats             => \%support_stats,
-        branches          => \@fix_branches,
+        branches          => \@fix_primitive_branches,
         out_support       => $out_support,
         species_tree_path => $species_tree_path,
     );
@@ -221,11 +234,12 @@ sub write_support_outputs {
     my $branches_ref      = $arg{branches};
     my $out_support_path  = $arg{out_support};
     my $tree_path         = $arg{species_tree_path};
+    my %branch_type_for   = read_branch_types_for_support($tree_path);
 
     open(my $SUP, '>', $out_support_path) or die "[ERROR] Cannot write $out_support_path: $!\n";
     print {$SUP} join(
         "\t",
-        qw(branch_id n_shared_genes n_fix_non_na n_free_non_na support_percent discordance_percent)
+        qw(branch_id branch_type n_shared_genes n_fix_non_na n_free_non_na support_percent discordance_percent)
     ), "\n";
 
     my %support_value_for;
@@ -241,6 +255,7 @@ sub write_support_outputs {
         print {$SUP} join(
             "\t",
             $b,
+            (exists $branch_type_for{$b} ? $branch_type_for{$b} : 'NA'),
             $s->{n_shared_genes} || 0,
             $n_fix_non_na,
             $n_free_non_na,
@@ -270,6 +285,61 @@ sub write_support_outputs {
 
     print STDERR "[INFO] Wrote: $out_support_path\n";
     print STDERR "[INFO] Wrote: $tree_base\n";
+}
+
+sub primitive_branch_axis {
+    my ($branches_ref) = @_;
+    return grep { defined $_ && $_ =~ /^B\d+$/ } @{$branches_ref};
+}
+
+sub read_branch_types_for_support {
+    my ($tree_path) = @_;
+
+    my $map_path = derive_branch_map_path($tree_path);
+    return () unless defined $map_path && -e $map_path;
+
+    open(my $MAP, '<', $map_path) or die "[ERROR] Cannot open branch map $map_path: $!\n";
+    my %branch_type_for;
+    my $line_no = 0;
+    while (my $line = <$MAP>) {
+        chomp $line;
+        next if $line =~ /^\s*$/;
+        $line_no++;
+        next if $line_no == 1; # header
+
+        my @f = split(/\t/, $line, -1);
+        next unless @f >= 3;
+        my ($branch_id, undef, $branch_type) = @f[0, 1, 2];
+        next unless defined $branch_id && $branch_id ne '';
+        $branch_type_for{$branch_id} = $branch_type ne '' ? $branch_type : 'NA';
+    }
+    close $MAP;
+
+    print STDERR "[INFO] Loaded branch types from $map_path\n";
+    return %branch_type_for;
+}
+
+sub derive_branch_map_path {
+    my ($tree_path) = @_;
+
+    my ($vol, $dir, $file) = File::Spec->splitpath($tree_path);
+    my @candidates;
+    if ($file =~ /(.*)\.forSplit\.nwk$/) {
+        push @candidates, File::Spec->catpath($vol, $dir, "$1.branch_map.txt");
+    }
+    if ($file =~ /(.*)\.nwk$/) {
+        push @candidates, File::Spec->catpath($vol, $dir, "$1.branch_map.txt");
+    }
+    push @candidates, File::Spec->catpath($vol, $dir, 'species_tree.branch_map.txt');
+
+    my %seen;
+    for my $candidate (@candidates) {
+        next if $seen{$candidate}++;
+        return $candidate if -e $candidate;
+    }
+
+    print STDERR "[WARN] Branch map not found alongside species tree; branch_type will be written as NA in support table.\n";
+    return undef;
 }
 
 sub read_tree_text {

@@ -147,6 +147,7 @@ When `--species_tree` is provided, SplitAligner computes `Support(b)` for each b
 The resulting outputs are:
 
 - `<final_label>.support_b.txt`: branch-wise summary table
+  - columns: `branch_id`, `branch_type`, `n_shared_genes`, `n_fix_non_na`, `n_free_non_na`, `support_percent`, `discordance_percent`
 - `<species_prefix>.support_b.nwk`: standard Newick tree with internal-node `Support` values written in the bootstrap position
 
 ---
