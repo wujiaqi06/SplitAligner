@@ -165,6 +165,8 @@ The branch is absent as a primitive branch but represented through a fused branc
 
 The projected branch is structurally absent after projection and is not evaluable for that gene.
 
+For internal branches in the unrooted species-tree representation, this includes projected splits in which either side contains fewer than two taxa. Terminal branches are handled separately and remain evaluable when the corresponding terminal taxon is present.
+
 ### `NA_topo`
 
 The projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree, consistent with topology-induced discordance.

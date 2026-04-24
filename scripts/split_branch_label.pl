@@ -60,7 +60,7 @@ open(my $ERR, '>', $error_log) or die "[ERROR] Cannot write $error_log: $!\n";
 # -------------------------------
 open(my $AXIS, '<', $species_axis_file) or die "[ERROR] Cannot read $species_axis_file: $!\n";
 
-my (%branch_to_split, %split_to_branch, %terminal_to_branch);
+my (%branch_to_split, %split_to_branch, %terminal_to_branch, %is_terminal_branch);
 
 while (my $line = <$AXIS>) {
     chomp $line;
@@ -86,8 +86,10 @@ while (my $line = <$AXIS>) {
     if (@parts == 2) {
         if ($parts[0] !~ /\.\./) {
             $terminal_to_branch{$parts[0]} = $branch_id;
+            $is_terminal_branch{$branch_id} = 1;
         } elsif ($parts[1] !~ /\.\./) {
             $terminal_to_branch{$parts[1]} = $branch_id;
+            $is_terminal_branch{$branch_id} = 1;
         }
     }
 }
@@ -168,8 +170,7 @@ for my $fname (@split_files) {
         for my $branch_id (keys %projected_branch_to_split) {
             my $s = $projected_branch_to_split{$branch_id};
             $s = prune_taxa_from_split($s, \@missing_species);
-            my @parts = split(/\|\|/, $s);
-            if (@parts != 2 || $parts[0] !~ /\w+/ || $parts[1] !~ /\w+/) {
+            if (!is_valid_projected_split($s, $is_terminal_branch{$branch_id})) {
                 delete $projected_branch_to_split{$branch_id};
             } else {
                 $projected_branch_to_split{$branch_id} = reorder_split($s);
@@ -277,4 +278,20 @@ sub prune_taxa_from_split {
     my @right = grep { $_ ne '' && !$missing{$_} } split(/\.\./, $parts[1], -1);
 
     return join('||', join('..', @left), join('..', @right));
+}
+
+sub is_valid_projected_split {
+    my ($split, $is_terminal) = @_;
+
+    my @parts = split(/\|\|/, $split, -1);
+    return 0 unless @parts == 2;
+
+    my @left  = grep { $_ ne '' } split(/\.\./, $parts[0], -1);
+    my @right = grep { $_ ne '' } split(/\.\./, $parts[1], -1);
+
+    # Terminal branches remain evaluable when the terminal taxon is present.
+    return (@left >= 1 && @right >= 1) if $is_terminal;
+
+    # Internal unrooted branches require a non-trivial bipartition after projection.
+    return (@left >= 2 && @right >= 2);
 }

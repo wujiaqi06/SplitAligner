@@ -84,6 +84,8 @@ For missing cells in the final matrices, these three `NA_*` labels are intended 
 - `NA_fuse`: the branch is not present as a primitive branch because its signal is represented on a fused branch
 - `NA_topo`: the branch is decisive under the fixed-topology baseline but absent from the free-topology gene tree
 
+For internal branches in the unrooted species-tree representation, a projected split is structurally undefined if either side contains fewer than two taxa after projection. Terminal branches are handled separately and remain evaluable when the corresponding terminal taxon is present.
+
 This design allows absence states to be analyzed explicitly instead of being collapsed into a single undifferentiated `NA`.
 
 ---

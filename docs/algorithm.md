@@ -36,6 +36,8 @@ Two major consequences follow:
 
 A species-tree branch may lose its discriminating power after taxon pruning and no longer define a meaningful split in the reduced taxon set.
 
+For internal branches in the unrooted species-tree representation, this occurs when either side of the projected split contains fewer than two taxa. Terminal branches are handled separately and remain evaluable when the corresponding terminal taxon is present.
+
 This corresponds to:
 
 - `NA_struct`
@@ -118,7 +120,7 @@ SplitAligner distinguishes several forms of missingness.
 Generic missing value before final classification.
 
 ### `NA_struct`
-The projected species-tree branch becomes structurally absent after taxon pruning.
+The projected species-tree branch becomes structurally absent after taxon pruning. For internal branches, this includes projected splits in which either side contains fewer than two taxa; terminal branches remain evaluable when the corresponding terminal taxon is present.
 
 ### `NA_fuse`
 The branch is absent as a primitive branch but represented through a fused branch after taxon pruning.
