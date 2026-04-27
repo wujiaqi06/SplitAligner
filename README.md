@@ -4,7 +4,7 @@
 
 # SplitAligner
 
-**SplitAligner** is a split-based gene tree-species tree reconciliation framework for robust branch mapping under missing taxa, fused branches, and gene-tree/species-tree discordance.
+**SplitAligner** is a branch-identity coordinate system for constructing gene-by-branch phylogenomic matrices under missing taxa and gene-tree discordance.
 
 It defines branch identity on a fixed species-tree backbone using canonicalized unrooted edge splits, projects that split space onto each gene tree according to the taxa observed in that gene, and generates standardized gene-by-branch matrices for downstream comparative analyses.
 
