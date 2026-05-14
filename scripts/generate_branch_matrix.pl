@@ -65,7 +65,7 @@ foreach my $fn (@files) {
 
         # Canonicalize fused order: B3|B1 -> B1|B3
         if ($pattern =~ /\|/) {
-            my @parts = sort split(/\|/, $pattern);
+            my @parts = sort_branch_ids(split(/\|/, $pattern));
             $pattern = join('|', @parts);
             $fused_patterns{$pattern} = 1;
         }
@@ -156,7 +156,7 @@ sub _synthesize_fused_value {
         my $v = $gene_href->{$b};
 
         # Only accept numeric values; otherwise NA (avoid implicit 0)
-        return "NA" unless defined $v && $v =~ /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+        return "NA" unless is_numeric_branch_value($v);
         $sum += $v;
     }
     return $sum;
@@ -165,12 +165,20 @@ sub _synthesize_fused_value {
 sub _merge_pattern_values {
     my ($old, $new) = @_;
 
-    my $is_old_num = defined $old && $old =~ /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
-    my $is_new_num = defined $new && $new =~ /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+    my $is_old_num = is_numeric_branch_value($old);
+    my $is_new_num = is_numeric_branch_value($new);
 
     return $old + $new if $is_old_num && $is_new_num;
     return $old if defined $old && (!defined $new || $new eq '');
     return $new;
+}
+
+sub is_numeric_branch_value {
+    my ($value) = @_;
+    return 0 unless defined $value;
+    return 0 if $value =~ /^\s*$/;
+    return 0 if $value =~ /^NA/;
+    return $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 }
 
 sub _cmp_branch_pattern {
@@ -191,4 +199,13 @@ sub _cmp_branch_pattern {
         }
     }
     return @aa <=> @bb;
+}
+
+sub sort_branch_ids {
+    return sort {
+        my ($an) = $a =~ /^B(\d+)$/;
+        my ($bn) = $b =~ /^B(\d+)$/;
+        return $a cmp $b unless defined $an && defined $bn;
+        return $an <=> $bn;
+    } @_;
 }

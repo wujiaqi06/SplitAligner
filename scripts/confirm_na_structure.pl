@@ -157,6 +157,23 @@ print STDERR "[INFO] FREE-only genes     : $n_free_only\n";
 die "[ERROR] No shared genes were found between FIX and FREE matrices. Please check whether the two inputs were generated from comparable gene sets and whether gene IDs are consistent.\n"
     if $n_shared == 0;
 
+my @fix_only_genes  = grep { !exists $free_row{$_} } sort keys %fix_row;
+my @free_only_genes = grep { !exists $fix_row{$_} } sort keys %free_row;
+my @gene_id_alias_matches = detect_hyphen_underscore_aliases(\@fix_only_genes, \@free_only_genes);
+
+if (@gene_id_alias_matches) {
+    my $preview_count = @gene_id_alias_matches < 10 ? scalar(@gene_id_alias_matches) : 10;
+    my @preview = map {
+        $_->{fix_gene} . " <-> " . $_->{free_gene}
+    } @gene_id_alias_matches[0 .. $preview_count - 1];
+
+    die "[ERROR] FIX and FREE matrices contain gene IDs that differ only by underscore/hyphen normalization. ".
+        "This would silently drop genes during finalize because only exact shared IDs are retained. ".
+        "Detected ".scalar(@gene_id_alias_matches)." likely alias pair(s), e.g. ".
+        join(", ", @preview).
+        ". Please harmonize gene IDs in the input gene-tree files before rerunning SplitAligner.\n";
+}
+
 # -------------------------
 # Open outputs only after validation
 # -------------------------
@@ -191,7 +208,7 @@ for my $gene (@shared_genes) {
             $fix{$b}  = 'NA_struct';
             $free{$b} = 'NA_struct';
         }
-        elsif ($fix{$b} ne 'NA' && $free{$b} eq 'NA') {
+        elsif (is_numeric_branch_evidence($fix{$b}) && $free{$b} eq 'NA') {
             $free{$b} = 'NA_topo';
         }
     }
@@ -234,7 +251,8 @@ sub write_support_outputs {
     my $branches_ref      = $arg{branches};
     my $out_support_path  = $arg{out_support};
     my $tree_path         = $arg{species_tree_path};
-    my %branch_type_for   = read_branch_types_for_support($tree_path);
+    my ($branch_type_ref, $duplicate_loser_ref) = read_branch_support_metadata($tree_path);
+    my %branch_type_for = %{$branch_type_ref};
 
     open(my $SUP, '>', $out_support_path) or die "[ERROR] Cannot write $out_support_path: $!\n";
     print {$SUP} join(
@@ -265,6 +283,12 @@ sub write_support_outputs {
     }
     close $SUP;
 
+    for my $loser (sort keys %{$duplicate_loser_ref}) {
+        my $winner = $duplicate_loser_ref->{$loser};
+        next unless defined $winner && exists $support_value_for{$winner};
+        $support_value_for{$loser} = $support_value_for{$winner};
+    }
+
     my $tree_text = read_tree_text($tree_path);
     $tree_text = standardize_support_tree($tree_text, \%support_value_for);
 
@@ -292,14 +316,15 @@ sub primitive_branch_axis {
     return grep { defined $_ && $_ =~ /^B\d+$/ } @{$branches_ref};
 }
 
-sub read_branch_types_for_support {
+sub read_branch_support_metadata {
     my ($tree_path) = @_;
 
     my $map_path = derive_branch_map_path($tree_path);
-    return () unless defined $map_path && -e $map_path;
+    return ({}, {}) unless defined $map_path && -e $map_path;
 
     open(my $MAP, '<', $map_path) or die "[ERROR] Cannot open branch map $map_path: $!\n";
     my %branch_type_for;
+    my %duplicate_loser_of;
     my $line_no = 0;
     while (my $line = <$MAP>) {
         chomp $line;
@@ -309,14 +334,17 @@ sub read_branch_types_for_support {
 
         my @f = split(/\t/, $line, -1);
         next unless @f >= 3;
-        my ($branch_id, undef, $branch_type) = @f[0, 1, 2];
+        my ($branch_id, undef, $branch_type, $note) = @f[0, 1, 2, 3];
         next unless defined $branch_id && $branch_id ne '';
         $branch_type_for{$branch_id} = $branch_type ne '' ? $branch_type : 'NA';
+        if (defined $note && $note =~ /duplicate_unrooted_split_loser_of=(B\d+)/) {
+            $duplicate_loser_of{$branch_id} = $1;
+        }
     }
     close $MAP;
 
     print STDERR "[INFO] Loaded branch types from $map_path\n";
-    return %branch_type_for;
+    return (\%branch_type_for, \%duplicate_loser_of);
 }
 
 sub derive_branch_map_path {
@@ -404,14 +432,57 @@ sub initialize_support_stats {
             my $branch    = $fix_branches_ref->[$i];
             my $fix_value = defined $fix_vals[$i] ? $fix_vals[$i] : 'NA';
 
-            $stats{$branch}{n_fix_non_na}++ if $fix_value !~ /^NA/;
+            $stats{$branch}{n_fix_non_na}++ if is_numeric_branch_evidence($fix_value);
 
             next unless exists $free_index{$branch};
             my $free_idx   = $free_index{$branch};
             my $free_value = defined $free_vals[$free_idx] ? $free_vals[$free_idx] : 'NA';
-            $stats{$branch}{n_free_non_na}++ if $free_value !~ /^NA/;
+            $stats{$branch}{n_free_non_na}++ if is_numeric_branch_evidence($free_value);
         }
     }
 
     return %stats;
+}
+
+sub detect_hyphen_underscore_aliases {
+    my ($fix_only_ref, $free_only_ref) = @_;
+
+    my %free_by_normalized;
+    for my $gene (@{$free_only_ref}) {
+        my $normalized = normalize_gene_id_for_alias_check($gene);
+        next unless defined $normalized;
+        push @{ $free_by_normalized{$normalized} }, $gene;
+    }
+
+    my @matches;
+    for my $gene (@{$fix_only_ref}) {
+        my $normalized = normalize_gene_id_for_alias_check($gene);
+        next unless defined $normalized;
+        next unless exists $free_by_normalized{$normalized};
+        for my $free_gene (@{ $free_by_normalized{$normalized} }) {
+            next if $gene eq $free_gene;
+            push @matches, {
+                fix_gene  => $gene,
+                free_gene => $free_gene,
+            };
+        }
+    }
+
+    return @matches;
+}
+
+sub normalize_gene_id_for_alias_check {
+    my ($gene) = @_;
+    return undef unless defined $gene;
+    my $normalized = $gene;
+    $normalized =~ tr/_-/__/;
+    return $normalized;
+}
+
+sub is_numeric_branch_evidence {
+    my ($value) = @_;
+    return 0 unless defined $value;
+    return 0 if $value =~ /^\s*$/;
+    return 0 if $value =~ /^NA/;
+    return $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 }

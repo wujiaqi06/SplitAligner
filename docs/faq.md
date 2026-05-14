@@ -22,7 +22,7 @@ A fused branch is a projected branch pattern produced when multiple original spe
 
 - `NA_struct`: structural absence after projection
 - `NA_fuse`: signal exists only through a fused branch
-- `NA_topo`: the branch is present in the fixed-tree matrix but absent in the free-tree matrix
+- `NA_topo`: the branch has numeric fixed-side primitive evidence but is absent in the free-topology gene tree
 
 ---
 
@@ -55,3 +55,15 @@ GeneA((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.1):0.1;
 ```
 
 This line-based format allows SplitAligner to generate one split file per gene and to preserve gene identities throughout matrix construction.
+
+---
+
+## 9. What happens when an internal branch projects to a `1|k` split?
+
+It is not emitted as an independently observable primitive internal branch. However, it is retained for fused-path bookkeeping. If another branch projects to the same reduced split and the fused coordinate carries numeric signal, the primitive branch is classified as `NA_fuse`.
+
+---
+
+## 10. Why can residual generic `NA` remain after `finalize`?
+
+Residual `NA` can remain when the fixed-topology baseline itself lacks numeric primitive-branch evidence. In that case, the free-side absence cannot be promoted to `NA_topo`, because `NA_topo` requires numeric fixed-side primitive evidence.

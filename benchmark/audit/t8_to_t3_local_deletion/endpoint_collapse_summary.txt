@@ -1,0 +1,8 @@
+Status: PASS
+Scenario: t8_to_t3_local_deletion
+Case 1 singleton check: PASS
+Case 2 fused-with-terminal check: PASS
+Internal-only fused groups checked: 3
+Internal-only fused groups status: PASS
+Case table: benchmark/audit/t8_to_t3_local_deletion/endpoint_collapse_cases.tsv
+Internal-only table: benchmark/audit/t8_to_t3_local_deletion/endpoint_collapse_internal_only_groups.tsv

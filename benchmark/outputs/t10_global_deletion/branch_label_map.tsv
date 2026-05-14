@@ -1,0 +1,19 @@
+splitaligner_branch	benchmark_unrooted_branch	benchmark_rooted_branch	split	note
+B11	N_15	N_16		internal branch
+B12	N_14	N_15		internal branch
+B13	N_13	N_14		internal branch
+B14	N_12	N_13		internal branch
+B15	N_17	N_18		internal branch
+B16	N_18	N_19		internal branch
+B17	N_16	N_17		internal branch
+B1	t10	t10		terminal branch
+B2	t1	t1		terminal branch
+B3	t8	t8		terminal branch
+B4	t7	t7		terminal branch
+B5	t4	t4		terminal branch
+B6	t9	t9		terminal branch
+B7	t5	t5		terminal branch
+B8	t2	t2		terminal branch
+B9	t3	t3		terminal branch
+B10	t6	t6		terminal branch
+-	-	N_12		root-only branch in rooted benchmark

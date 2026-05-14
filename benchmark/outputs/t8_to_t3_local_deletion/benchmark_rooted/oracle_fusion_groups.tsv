@@ -1,0 +1,12 @@
+gene_id	step_id	merge_group_id	expected_fused_length	group_size	benchmark_rooted_members
+main_step1	1	MG01	1.460880017	2	N_14|N_15
+main_step2	2	MG01	1.460880017	2	N_14|N_15
+main_step2	2	MG02	0.8371730952	2	N_16|t4
+main_step3	3	MG01	2.296884277	3	N_14|N_15|t9
+main_step4	4	MG01	1.127601897	2	N_13|t1
+main_step5	5	MG01	1.127601897	2	N_13|t1
+main_step5	5	MG02	1.496224871	2	N_18|t2
+main_step6	6	MG01	1.127601897	2	N_13|t1
+main_step6	6	MG02	0.7415439566	2	N_17|N_19
+main_step7	7	MG01	1.127601897	2	N_13|t1
+main_step7	7	MG02	0.7488781035	3	N_17|N_19|t6

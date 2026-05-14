@@ -7,11 +7,11 @@
 #
 # Description:
 #   Marks primitive branches (e.g., B12) as NA_fuse when the corresponding fused
-#   branch (e.g., B12|B47) is PRESENT (i.e., not NA*) for a gene, indicating that
+#   branch (e.g., B12|B47) carries numeric fused signal for a gene, indicating that
 #   the gene-tree signal cannot resolve the species-tree nodes separately.
 #
 #   This script keeps ONLY primitive branches in the output table, but updates
-#   NA values to NA_fuse when supported by a non-NA fused signal.
+#   NA values to NA_fuse when supported by a numeric fused signal.
 #
 # Inputs:
 #   -i / --input  <matrix_with_fuse.txt>
@@ -92,12 +92,11 @@ while (my $line = <$IN>) {
         $val_for{$header_cols[$i]} = $f[$i];
     }
 
-    # If a fused branch has a non-NA signal, mark any NA primitive component as NA_fuse
+    # If a fused branch has a numeric signal, mark any NA primitive component as NA_fuse
     for my $fb (@fused_branches) {
         my $fb_val = $val_for{$fb};
 
-        next if !defined $fb_val;
-        next if $fb_val =~ /^NA/;   # NA, NA_struc, NA_topo, NA_fuse, etc.
+        next unless is_numeric_branch_value($fb_val);
 
         my @parts = split(/\|/, $fb);
         for my $p (@parts) {
@@ -121,3 +120,11 @@ close $IN;
 close $OUT;
 
 print STDERR "[INFO] Wrote: $output_matrix\n";
+
+sub is_numeric_branch_value {
+    my ($value) = @_;
+    return 0 unless defined $value;
+    return 0 if $value =~ /^\s*$/;
+    return 0 if $value =~ /^NA/;
+    return $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+}

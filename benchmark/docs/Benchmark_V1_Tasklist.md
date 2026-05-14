@@ -2,35 +2,46 @@
 
 ## Goal
 
-Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `NA_fuse` on the full-tree primitive-edge axis.
+Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `NA_fuse` on the semantics-normalized full-tree primitive-edge axis.
 
 ## Freeze
 
 - full-tree primitive-edge axis includes terminal and internal edges
 - external edge IDs are standardized to `Bxxx`
 - V1 covers `NA_struct` and `NA_fuse` only
-- ordered deletion and random deletion are both required
+- ordered deletion is required for the packaged benchmark bundle
 - ordered deletion uses a frozen plotting convention
-- random deletion uses permutation-based trajectories with fixed seed and `nrep = 100`
 - pruning stops at `max_delete_fraction = 0.7` and must satisfy `min_tips_remaining = 3`
+- random deletion remains an optional extension for broader Benchmark V1 analyses
 
 ## Deliverables
 
 - `Benchmark_V1_Spec.md`
-- `oracle_states.tsv`
-- `oracle_events.tsv`
-- `trajectory.tsv`
+- `README.md`
+- `benchmark.table.txt`
+- `oracle_cell_status_long.tsv`
+- `oracle_fusion_groups.tsv`
+- `benchmark.oracle_events.tsv`
+- `benchmark.trajectory.tsv`
+- `benchmark.schedule.tsv`
 - ordered-pruning input gene-tree series
-- random-pruning replicate series
 - SplitAligner comparison outputs
+- audit outputs:
+  - `expected_vs_splitaligner.full.tsv`
+  - `expected_vs_splitaligner.diff.tsv`
+  - `unexpected_mismatches.tsv`
+  - `fusion_groups.full.tsv`
+  - `fusion_groups.diff.tsv`
+  - `pass_fail_summary.txt`
 - stepwise plots
 - trajectory plots
+- random-pruning replicate series only if the optional random-deletion extension is enabled
 
 ## Work Items
 
 ### 1. Axis and mapping
 
-- define the full-tree primitive-edge axis from `T0`
+- define the semantics-normalized full-tree primitive-edge axis from `T0`
 - read or generate the authoritative `Bxxx` branch mapping
 - ensure oracle-side edge IDs and SplitAligner-side edge IDs use the same axis
 
@@ -38,14 +49,15 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 
 - implement ordered deletion schedule
 - freeze ladderize + cladewise + top-to-bottom plotting convention
-- implement random deletion schedule as a random tip permutation
+- implement packaged deterministic toy scenarios
+- implement random deletion schedule as a random tip permutation only if the optional extension is enabled
 - enforce stopping rules: `max_delete_fraction = 0.7`, `min_tips_remaining = 3`
 - store schedule metadata and seeds
 
 ### 3. Pruning-series generation
 
 - generate the ordered pruning series `T0..Tk`
-- generate random pruning replicate series
+- generate random pruning replicate series only if the optional random-deletion extension is enabled
 - store retained tip sets `S_i`
 - export tree series in a format directly usable by SplitAligner
 
@@ -56,14 +68,16 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 - record `local_e_term`
 - record `local_e_sib`
 - record `local_e_up`
-- write `oracle_events.tsv`
+- write `benchmark.oracle_events.tsv`
 
 ### 5. State-level oracle
 
-- track primitive-edge survival on the full-tree axis through pruning and contraction
+- track primitive-edge survival on the semantics-normalized full-tree axis through pruning and contraction
 - classify `NA_struct` by explicit node/edge state tracking
-- derive fusion partitions from contraction-induced merge classes
-- write `oracle_states.tsv`
+- derive fusion groups from contraction-induced merge classes
+- write `benchmark.table.txt`
+- write `oracle_cell_status_long.tsv`
+- write `oracle_fusion_groups.tsv`
 
 ### 6. Closure checks
 
@@ -78,21 +92,23 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 - compute `max_group_size`
 - compute `num_groups_ge2`
 - compute `n_tips`
-- write `trajectory.tsv`
+- write `benchmark.trajectory.tsv`
+- write `benchmark.schedule.tsv`
 
 ### 8. SplitAligner runs
 
 - run SplitAligner on the ordered pruning series
-- run SplitAligner on random replicate series as needed
+- run SplitAligner on random replicate series only if the optional random-deletion extension is enabled
 - collect matrix outputs on the same benchmark inputs
 
-### 9. SplitAligner-side fusion reconstruction
+### 9. Packaged audit
 
-- reconstruct primitive-edge equivalence classes from fused composite labels
-- incorporate primitive-row `NA_fuse` assignments
-- derive the SplitAligner-side fusion partition per step
+- compare `benchmark_unrooted` primitive-cell states against `splitaligner_perl`
+- audit active fused-coordinate agreement plus synthetic composite sum consistency against `benchmark.matrix_with_fuse.txt`
+- write full audit tables and diff-only audit tables
+- record scenario-level pass/fail summary
 
-### 10. Comparison metrics
+### 10. Optional broader Benchmark V1 comparisons
 
 - compute `NA_struct exact match`
 - compute `primitive-edge state exact match`
@@ -105,8 +121,8 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 - generate stepwise local-motif plots
 - generate stepwise oracle-state plots
 - generate ordered trajectory plots
-- generate random `mean ± sd` trajectory plots
-- generate ordered-vs-random comparison plots
+- generate random `mean ± sd` trajectory plots only if the optional random-deletion extension is enabled
+- generate ordered-vs-random comparison plots only if the optional random-deletion extension is enabled
 
 ### 12. Narrative alignment
 
@@ -118,22 +134,22 @@ Build an oracle-validated fixed-topology pruning benchmark for `NA_struct` and `
 ## Suggested Implementation Order
 
 1. axis and `Bxxx` mapping
-2. ordered schedule
+2. packaged deterministic schedules
 3. pruning-series export
 4. event-level oracle
 5. state-level oracle
 6. closure checks
 7. trajectory summaries
 8. SplitAligner runs
-9. fusion-partition reconstruction
-10. metrics
+9. packaged primitive-cell and fused-coordinate audit
+10. optional broader metrics
 11. plots
 
 ## Definition of Done
 
-- oracle outputs are generated on the full-tree primitive-edge axis
-- ordered and random trajectories are reproducible
+- oracle outputs are generated on the semantics-normalized full-tree primitive-edge axis
+- ordered packaged scenarios are reproducible, and random trajectories are reproducible if the optional random-deletion extension is enabled
 - oracle closure passes at every step
 - SplitAligner outputs are comparable on the same `Bxxx` axis
-- `NA_struct` and fusion recovery metrics can be computed end-to-end
+- packaged primitive-cell and fused-coordinate audits pass end-to-end
 - benchmark outputs are ready to support manuscript and README updates

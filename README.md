@@ -10,13 +10,13 @@ It defines branch identity on a fixed species-tree backbone using canonicalized 
 
 SplitAligner explicitly distinguishes biologically meaningful forms of missingness:
 
-- `NA_struct`: structural absence after taxon pruning causes a projected branch to become undefined
+- `NA_struct`: a projected side disappears after taxon pruning, so the branch has no projected identity
 - `NA_fuse`: signal is represented on a fused branch rather than on a primitive branch
-- `NA_topo`: the projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree
+- `NA_topo`: the projected branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree
 
 This repository contains the SplitAligner source code, example datasets, and documentation needed to reproduce the core branch-mapping workflow.
 
-Current release: `v1.1.1`
+Current release: `v1.2.0`
 
 ---
 
@@ -28,7 +28,7 @@ we ask one thing: does branch `b` still hold?
 
 Project the split:
 
-If it collapses - `NA_struct`.
+If a projected side disappears - `NA_struct`.
 
 If branches fuse - `Bs1|Bs3`, `NA_fuse`.
 
@@ -76,15 +76,24 @@ In practice, SplitAligner asks a simple question for each gene and each species-
 
 ## Definition Summary
 
-In finalized SplitAligner matrices, each gene-branch cell is interpreted as either `mapped` or as one of three explicit missingness states: `NA_struct`, `NA_fuse`, or `NA_topo`.
+In finalized SplitAligner matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when no fixed-side numeric primitive evidence is available.
 
-For missing cells in the final matrices, these three `NA_*` labels are intended as mutually exclusive explanatory categories rather than as generic absence codes:
+For missing cells in the final matrices, these `NA_*` labels are explanatory categories rather than generic absence codes:
 
-- `NA_struct`: the projected branch is structurally undefined after taxon pruning
-- `NA_fuse`: the branch is not present as a primitive branch because its signal is represented on a fused branch
-- `NA_topo`: the branch is decisive under the fixed-topology baseline but absent from the free-topology gene tree
+- `NA_struct`: a projected side disappears entirely, so the branch has no projected identity on that gene
+- `NA_fuse`: the branch is not retained as an independently observable primitive branch because its numeric signal is carried by a fused coordinate
+- `NA_topo`: the branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree
 
-For internal branches in the unrooted species-tree representation, a projected split is structurally undefined if either side contains fewer than two taxa after projection. Terminal branches are handled separately and remain evaluable when the corresponding terminal taxon is present.
+More explicitly, the current implementation distinguishes the following projection outcomes:
+
+- empty projected side
+  - no projected identity remains, so the primitive branch is structurally missing
+- internal `>=2|>=2`
+  - the projected split remains an independently observable primitive internal branch
+- internal `1|k`
+  - the projected split is not independently observable as a primitive internal branch, but it is retained for fused-path bookkeeping
+- numeric fused coordinate
+  - primitive branches explained by that fused coordinate are classified as `NA_fuse`
 
 This design allows absence states to be analyzed explicitly instead of being collapsed into a single undifferentiated `NA`.
 
@@ -95,6 +104,8 @@ This design allows absence states to be analyzed explicitly instead of being col
 All gene-tree splits are mapped onto a fixed species-tree branch coordinate system defined by the input species-tree backbone.
 
 For a given species-tree backbone, branch indexing and branch-matrix construction are deterministic and reproducible: the same species-tree split axis is used for every gene, each gene tree is evaluated by projection onto that fixed coordinate system, and the final matrix is independent of gene-tree processing order.
+
+When rooted species trees induce duplicate canonical unrooted splits, SplitAligner collapses them to a deterministic representative chosen by the smaller numeric `B` ID. The corresponding `branch_map` records duplicate winners and losers, and duplicate rooted display branches in `support_b.nwk` inherit the support of their unrooted representative rather than being written as false zero-support branches.
 
 ---
 
@@ -128,7 +139,7 @@ flowchart LR
     B --> D
     D --> E["Gene-by-branch matrices<br/>(with primitive and fused branches)"]
     E --> F["finalize / finalize_fix"]
-    F --> G["mapped / NA_struct / NA_fuse / NA_topo"]
+    F --> G["numeric / NA_struct / NA_fuse / NA_topo / residual NA"]
     F --> H["Support table + annotated tree"]
 ```
 
@@ -140,7 +151,7 @@ flowchart LR
 - Explicit handling of missing taxa during per-gene projection
 - Recognition of fused branch patterns after taxon pruning
 - Matrix generation for fixed-topology and free-topology gene-tree sets
-- Final classification of generic missing cells into `NA_fuse`, `NA_struct`, and `NA_topo`
+- Evidence-based classification of missing cells into `NA_fuse`, `NA_struct`, and `NA_topo`, with residual `NA` retained when fixed-side numeric evidence is unavailable
 - Optional branch-wise `Support` summary and annotated species tree at the end of `finalize`
 - Reproducible example workflow included in `examples/302mammal/`
 
@@ -162,6 +173,7 @@ SplitAligner/
     generate_branch_matrix.pl
     extract_na_fuse.pl
     confirm_na_structure.pl
+    classify_fix_missingness.pl
 
   examples/
     302mammal/
@@ -170,11 +182,6 @@ SplitAligner/
         free_tree.examples.nwk
         fix_tree.examples.nwk
       expected/
-    benchmark/
-      input/
-        benchmark.species_tree.nwk
-        benchmark.gene_trees.nwk
-      expected/
     preprint_302mammal/
       input/
         speciesTree302.nwk
@@ -182,11 +189,27 @@ SplitAligner/
         fix.2275genes.nwk
     run.sh
 
+  assets/
+    SplitAligner_logo.png
+
   benchmark/
     README.md
     scripts/
     inputs/
     outputs/
+      rooted_species_tree_branch_labels.pdf
+      unrooted_species_tree_branch_labels.pdf
+      t10_global_deletion/
+        benchmark_rooted/
+        benchmark_unrooted/
+        splitaligner_perl/
+      t8_to_t3_local_deletion/
+        benchmark_rooted/
+        benchmark_unrooted/
+        splitaligner_perl/
+    audit/
+      t10_global_deletion/
+      t8_to_t3_local_deletion/
     docs/
 
   docs/
@@ -194,6 +217,12 @@ SplitAligner/
     benchmark_rules.md
     io_spec.md
     faq.md
+
+  tests/
+    confirm_na_structure_regression/
+    extract_na_fuse_regression/
+    root_duplicate_unrooted_axis_regression/
+    support_duplicate_root_regression/
 ```
 
 ---
@@ -266,22 +295,19 @@ Two runnable example configurations are provided.
 
 - `examples/302mammal/`
   Small toy example for quick smoke testing and expected-output comparison.
-- `examples/benchmark/`
-  Benchmark species tree and gene trees used to test the Perl SplitAligner workflow on benchmark-constructed input trees, with packaged unrooted reference outputs.
 - `examples/preprint_302mammal/`
   Full 2275-gene dataset used for the preprint-scale 302-mammal analysis, packaged as analysis inputs without bundled expected outputs.
 
-The repository also includes a separate top-level `benchmark/` bundle. This is the R-side oracle package used to construct, inspect, and visualize the benchmark itself. It is intentionally kept separate from `examples/benchmark/`, which serves as the Perl SplitAligner test location for benchmark trees and is not part of the Perl runtime.
+The repository also includes a separate top-level `benchmark/` bundle. This is the R-side oracle package and audit scaffold used to construct, inspect, and validate benchmark scenarios. Benchmark rooted, unrooted, and Perl outputs are organized there by scenario, but SplitAligner Perl outputs are compared strictly against `benchmark_unrooted`. The `benchmark_rooted` outputs are reference-only companion outputs and are expected to differ in root-adjacent cases. A benchmark PASS requires zero unexpected mismatches against `benchmark_unrooted`.
 
 From the repository root:
 
 ```bash
 bash examples/run.sh toy
 bash examples/run.sh preprint
-bash examples/run.sh benchmark
 ```
 
-The `toy` run is intended for fast workflow checks. The `preprint` run reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree. The `benchmark` run reproduces the packaged benchmark-alignment example in fix-only mode.
+The `toy` run is intended for fast workflow checks. The `preprint` run reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree.
 
 The example workflow performs:
 
@@ -290,7 +316,7 @@ The example workflow performs:
 3. final NA classification by comparing the two matrix sets
 4. optional `Support` calculation and species-tree annotation if `--species_tree` is provided
 
-Expected reference outputs are provided for the toy example in `examples/302mammal/expected/` and for the benchmark example in `examples/benchmark/expected/`.
+Expected reference outputs are provided for the toy example in `examples/302mammal/expected/`.
 
 Minimal command-line usage from the repository root:
 
@@ -320,9 +346,9 @@ Final matrices are gene-by-branch tables indexed by the fixed species-tree branc
 | gene3 | 0.0431    | 0.0305    | NA_struct  |
 
 - Numeric values indicate mapped branch-associated values for that gene and branch.
-- `NA_struct` means the projected branch is not structurally defined for that gene after taxon pruning.
+- `NA_struct` means a projected side disappeared, so the branch has no projected identity for that gene.
 - `NA_fuse` means the branch is not represented as a primitive branch because its signal is captured by a fused branch.
-- `NA_topo` means the branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree.
+- `NA_topo` means the branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree.
 
 ---
 
@@ -341,14 +367,16 @@ SplitAligner runs in two major stages.
 
 ### Stage 2: `finalize`
 
-1. Mark primitive-branch `NA` cells that are explained by fused-branch signal as `NA_fuse`
+1. Mark primitive-branch `NA` cells that are explained by numeric fused-branch signal as `NA_fuse`
 2. Compare fixed-topology and free-topology matrices on shared genes
-3. Classify remaining missing values as `NA_struct` or `NA_topo`
+3. Classify remaining missing cells: shared generic `NA` in both fixed and free matrices becomes `NA_struct`, whereas free-side `NA` becomes `NA_topo` only when numeric fixed-side primitive evidence exists
 4. Optionally compute branch-wise `Support` and write an annotated species tree
+
+Residual generic `NA` is retained when topology-induced absence cannot be diagnosed from numeric fixed-side evidence.
 
 ### Stage 3: `finalize_fix`
 
-1. Mark primitive-branch `NA` cells that are explained by fused-branch signal as `NA_fuse`
+1. Mark primitive-branch `NA` cells that are explained by numeric fused-branch signal as `NA_fuse`
 2. In fix-only analyses, rewrite all remaining `NA` cells as `NA_struct`
 3. Produce a fix-only classified matrix without invoking `NA_topo`
 
@@ -421,8 +449,8 @@ perl SplitAligner.pl --mode finalize \
 
 Main outputs:
 
-- `<free>.na_fuse.txt`
-- `<fix>.na_fuse.txt`
+- `free.matrix_with_fuse.na_fuse.txt`
+- `fix.matrix_with_fuse.na_fuse.txt`
 - `<final_label>.fix.na_classified.txt`
 - `<final_label>.free.na_classified.txt`
 - `<final_label>.support_b.txt` if `--species_tree` is provided
@@ -432,7 +460,9 @@ The final classification step is defined only for genes shared between the fixed
 
 When `--species_tree` is provided, SplitAligner also computes a branch-wise concordance score, `Support(b)`, on the species-tree backbone. In the current implementation, `Support(b)` is defined on genes shared between the fixed-topology and free-topology inputs as:
 
-`Support(b) = 100 * [number of non-NA entries for branch b in the free-topology matrix] / [number of non-NA entries for branch b in the fixed-topology matrix]`
+`Support(b) = 100 * [number of numeric free-topology entries for branch b] / [number of numeric fixed-topology entries for branch b]`
+
+Only numeric branch evidence is counted. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted. The output column names `n_fix_non_na` and `n_free_non_na` are retained for compatibility, but they currently count numeric branch evidence rather than generic non-NA strings.
 
 ### `--mode finalize_fix`
 
@@ -453,10 +483,10 @@ perl SplitAligner.pl --mode finalize_fix \
 
 Main outputs:
 
-- `<fix>.na_fuse.txt`
+- `fix.matrix_with_fuse.na_fuse.txt`
 - `<final_label>.fix.na_classified.txt`
 
-In `finalize_fix`, SplitAligner first marks `NA_fuse` from fused-branch signal and then interprets all remaining `NA` cells as `NA_struct`. This mode does not define or emit `NA_topo`.
+In `finalize_fix`, SplitAligner first marks `NA_fuse` from numeric fused-branch signal and then interprets all remaining `NA` cells as `NA_struct`. This mode does not define or emit `NA_topo`.
 
 ---
 
@@ -525,9 +555,9 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 
 ### Outputs from `finalize`
 
-- `<free>.na_fuse.txt`
-  - primitive-branch matrix in which fused-supported `NA` cells are relabeled as `NA_fuse`
-- `<fix>.na_fuse.txt`
+- `free.matrix_with_fuse.na_fuse.txt`
+  - primitive-branch matrix in which numeric fused-supported `NA` cells are relabeled as `NA_fuse`
+- `fix.matrix_with_fuse.na_fuse.txt`
   - same transformation for the fixed-topology matrix
 - `<final_label>.fix.na_classified.txt`
   - fixed-topology matrix after final NA classification
@@ -547,9 +577,11 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `NA_fuse`
   - the branch is absent as a primitive branch but represented through a fused branch after taxon pruning
 - `NA_struct`
-  - the projected branch is structurally absent after projection and is not evaluable for that gene
+  - a projected side disappears after projection, so the branch has no projected identity and is not evaluable for that gene
 - `NA_topo`
-  - the projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree, consistent with topology-induced discordance
+  - the projected branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree, consistent with topology-induced discordance
+
+Residual generic `NA` may remain in `finalize` outputs when the fixed baseline itself lacks numeric primitive evidence, for example when the fixed-side state is `NA_fuse` or `NA_struct`.
 
 These categories are intended to prevent biologically distinct sources of missingness from being conflated in downstream analyses.
 

@@ -1,0 +1,8 @@
+run_id	step_id	deleted_tip	deleted_tip_parent_label	local_e_term	local_e_sib	local_e_up	local_sib_child_label	local_sib_parent_label	local_up_child_label	local_up_parent_label
+main	1	t8	N_14	t8	N_15	N_14	N_15	N_14	N_14	N_13
+main	2	t7	N_16	t7	t4	N_16	t4	N_16	N_16	N_15
+main	3	t4	N_15	t4	t9	N_14|N_15	t9	N_15	N_15	N_13
+main	4	t9	N_13	t9	t1	N_13	t1	N_13	N_13	N_12
+main	5	t5	N_18	t5	t2	N_18	t2	N_18	N_18	N_17
+main	6	t2	N_17	t2	N_19	N_17	N_19	N_17	N_17	N_12
+main	7	t3	N_19	t3	t6	N_17|N_19	t6	N_19	N_19	N_12

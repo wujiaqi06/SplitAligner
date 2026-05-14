@@ -12,7 +12,7 @@ The purpose of this benchmark is to validate SplitAligner's core object:
 
 This benchmark is therefore an oracle-validated missingness benchmark, not a tree-reconstruction benchmark.
 
-Fusion groups are not heuristic objects introduced by the software, but contraction-induced merged-edge classes on the fixed full-tree primitive-edge axis.
+Fusion groups are not heuristic objects introduced by the software, but contraction-induced merged-edge classes on the fixed semantics-normalized full-tree primitive-edge axis.
 
 ## 1.1 Oracle Independence Constraint
 
@@ -27,7 +27,7 @@ Instead, the R-side oracle is restricted to APE-based tree surgery and explicit 
 - `drop.tip`-based pruning
 - degree-2 contraction
 - parent-child adjacency
-- explicit local and cumulative edge-state tracking on the full-tree primitive-edge axis
+- explicit local and cumulative edge-state tracking on the semantics-normalized full-tree primitive-edge axis
 
 In Benchmark V1:
 
@@ -38,9 +38,9 @@ If the R-side benchmark begins to use split-based logic to classify missingness,
 
 ## 2. Core Object
 
-The unified coordinate axis is the set of all primitive edges on the full species tree `T0`, including both terminal and internal edges.
+The unified coordinate axis is the set of all primitive edges on the semantics-normalized full species tree `T0`, including both terminal and internal edges.
 
-All oracle outputs, SplitAligner outputs, and evaluation metrics must be mapped back to this full-tree primitive-edge axis. External branch identifiers should be standardized to SplitAligner branch labels (`Bxxx`) using the species-tree branch map as the authoritative mapping source.
+All oracle outputs, SplitAligner outputs, and evaluation metrics must be mapped back to this semantics-normalized full-tree primitive-edge axis. External branch identifiers should be standardized to SplitAligner branch labels (`Bxxx`) using the species-tree branch map as the authoritative mapping source.
 
 ## 2.1 Unrooted versus rooted semantics
 
@@ -61,6 +61,11 @@ Therefore:
 - the current Benchmark V1 is the unrooted benchmark
 - rooted-tree benchmarking should be implemented as a separate companion module rather than mixed into the unrooted benchmark definition
 - any future rooted benchmark must explicitly state that its branch-identity rules are different from the unrooted SplitAligner benchmark
+
+For the packaged benchmark outputs in this repository:
+
+- `benchmark_unrooted/` uses a semantics-normalized full-tree primitive-edge axis after pseudo-root normalization under unrooted branch semantics
+- `benchmark_rooted/` preserves rooted branch distinctions and is retained as a companion output rather than the primary SplitAligner audit target
 
 ### 2.1.1 Implementation note: why unrooted needed a separate contraction rule
 
@@ -94,7 +99,7 @@ Each `Ti` is treated as a fixed-topology gene tree: topology is always the induc
 
 ### 3.2 Primitive-edge axis
 
-For each primitive edge `e` in `T0`, assign a stable edge identity on the full-tree axis. This axis includes both terminal and internal edges and remains the only benchmark coordinate system used for oracle outputs, SplitAligner outputs, and comparison metrics.
+For each primitive edge `e` in `T0`, assign a stable edge identity on the semantics-normalized full-tree axis. This axis includes both terminal and internal edges and remains the only benchmark coordinate system used for oracle outputs, SplitAligner outputs, and comparison metrics.
 
 ### 3.3 Structural state under pruning
 
@@ -132,7 +137,7 @@ For a deleted tip `x`, define:
 
 This local motif is recorded as an event-level object for explanation, sanity checking, and visualization. It is not itself the final global fusion truth.
 
-It records the newly induced local contraction event at that deletion step, whereas final branch states are determined only by the state-level node/edge oracle on the full primitive-edge axis.
+It records the newly induced local contraction event at that deletion step, whereas final branch states are determined only by the state-level node/edge oracle on the semantics-normalized full-tree primitive-edge axis.
 
 ## 4. Benchmark Data Generation
 
@@ -222,6 +227,19 @@ Schedule roles within Benchmark V1 are therefore:
 - anchored local ordered deletion: local mechanism, sensitivity, and targeted-fusion trajectories
 - random deletion: statistical control trajectories summarized across replicates
 
+### 4.5.1 Packaged benchmark scope
+
+The current packaged benchmark release in this repository is intentionally narrower than the full Benchmark V1 design space.
+
+It distributes two deterministic audited toy scenarios:
+
+- `t10_global_deletion`
+- `t8_to_t3_local_deletion`
+
+These packaged scenarios are sufficient for coordinate auditing, rooted-versus-unrooted clarification, and explicit `NA_struct` / `NA_fuse` regression checks against SplitAligner Perl.
+
+Random deletion remains a valid Benchmark V1 extension, but it is not required for the current packaged benchmark audit bundle.
+
 ## 5. Oracle Structure
 
 The oracle has two levels.
@@ -266,7 +284,7 @@ This provides the oracle-side closure check for the benchmark.
 
 ## 7. SplitAligner Outputs and Mapping
 
-SplitAligner outputs must be mapped to the same full-tree primitive-edge axis as the oracle.
+SplitAligner outputs must be mapped to the same semantics-normalized full-tree primitive-edge axis as the oracle.
 
 The authoritative external branch ID is `Bxxx`, derived from the species-tree branch map generated by SplitAligner, typically via `species_tree.branch_map.txt`.
 
@@ -302,15 +320,24 @@ Secondary goal:
 
 Compare ordered and random pruning trajectories in terms of structural and fusion burden.
 
+### 8.4 Current packaged audit scope
+
+The current packaged audit bundle in this repository is intentionally narrower than the full Benchmark V1 design space.
+
+It currently validates:
+
+- primitive-cell state agreement between `splitaligner_perl/` and `benchmark_unrooted/`
+- active fused-coordinate agreement plus synthetic composite sum consistency in `benchmark.matrix_with_fuse.txt`
+
+It does not currently package broader fusion-partition summary metrics such as ARI or Jaccard.
+
 ## 9. Metrics
 
 Primary metrics:
 
 - `NA_struct exact match`
 - `primitive-edge state exact match`
-- `fusion partition exact match`
-- `ARI`
-- `Jaccard`
+- active fused-coordinate exact match plus synthetic composite sum consistency
 
 Trajectory statistics:
 
@@ -324,24 +351,40 @@ Ordered deletion is summarized as a single deterministic trajectory. Random dele
 
 For `primitive-edge state exact match`, each primitive edge at each step is compared in terms of its benchmark-visible state on the full-tree axis, such as `mapped`, `NA_struct`, or `NA_fuse`.
 
+Additional broader Benchmark V1 metrics, such as fusion partition exact match, ARI, and Jaccard, remain valid extensions but are not part of the current packaged audit.
+
 ## 10. Required Output Tables
 
-### 10.1 `oracle_states.tsv`
+### 10.1 `benchmark.table.txt`
+
+This is the packaged wide-format primitive-coordinate oracle matrix used as the primary audit target.
+
+### 10.2 `oracle_cell_status_long.tsv`
 
 Recommended fields:
 
 - `step_id`
-- `deleted_tip`
-- `n_tips`
+- `gene_id`
 - `edge_id`
-- `edge_type`
 - `state_label`
-- `is_struct_undef`
 - `merge_group_id`
 
-This is the main long-format oracle truth table.
+This is the packaged main long-format oracle truth table.
 
-### 10.2 `oracle_events.tsv`
+### 10.3 `oracle_fusion_groups.tsv`
+
+Recommended fields:
+
+- `gene_id`
+- `step_id`
+- `merge_group_id`
+- `benchmark_unrooted_members`
+- `expected_fused_length`
+- `group_size`
+
+This is the packaged fused-coordinate oracle table used to audit expected merge groups.
+
+### 10.4 `benchmark.oracle_events.tsv`
 
 Recommended fields:
 
@@ -354,7 +397,7 @@ Recommended fields:
 
 This stores the event-level local motif record for each deletion step.
 
-### 10.3 `trajectory.tsv`
+### 10.5 `benchmark.trajectory.tsv`
 
 Recommended fields:
 
@@ -369,13 +412,17 @@ Recommended fields:
 
 This stores trajectory-level summaries for ordered and random schedules.
 
+### 10.6 `benchmark.schedule.tsv`
+
+This stores the frozen packaged schedule for each scenario, including retained and deleted tip labels.
+
 ## 11. Benchmark Questions
 
 Benchmark V1 must answer the following questions:
 
 1. Can SplitAligner exactly recover oracle-defined `NA_struct` under fixed-topology pruning?
-2. Can SplitAligner recover oracle-defined fusion groups on the same primitive-edge axis?
-3. Does ordered pruning produce a distinct fusion trajectory relative to random pruning?
+2. Can SplitAligner recover oracle-defined fused-coordinate expectations on the same primitive-edge axis?
+3. Does ordered pruning produce a distinct fusion trajectory relative to random pruning when optional random extensions are enabled?
 4. How does the local contraction motif relate to the global merge-class growth pattern across steps?
 5. Does oracle closure hold at every pruning step?
 
@@ -385,10 +432,10 @@ Recommended implementation order:
 
 1. define and freeze the full-tree branch axis
 2. generate ordered pruning series
-3. generate random pruning replicates
+3. generate random pruning replicates if optional random extensions are enabled
 4. implement event-level local oracle
 5. implement state-level node/edge oracle
-6. write `oracle_states.tsv`, `oracle_events.tsv`, and `trajectory.tsv`
+6. write packaged oracle tables and schedule outputs
 7. run SplitAligner on the same pruning series
 8. map SplitAligner outputs to the `Bxxx` axis
 9. compare oracle and SplitAligner outputs

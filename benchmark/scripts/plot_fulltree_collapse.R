@@ -24,12 +24,22 @@ tree_semantics <- if (exists("TREE_SEMANTICS", inherits = TRUE)) {
 } else {
   "unrooted"
 }
-out_dir <- file.path(base_dir, "outputs", tree_semantics)
 out_prefix <- if (exists("OUT_PREFIX", inherits = TRUE)) {
   get("OUT_PREFIX", inherits = TRUE)
 } else {
-  file.path(out_dir, "benchmark")
+  scenario_name <- if (exists("SCENARIO_NAME", inherits = TRUE)) {
+    get("SCENARIO_NAME", inherits = TRUE)
+  } else {
+    "t10_global_deletion"
+  }
+  semantics_subdir <- if (identical(tree_semantics, "rooted")) {
+    "benchmark_rooted"
+  } else {
+    "benchmark_unrooted"
+  }
+  file.path(base_dir, "outputs", scenario_name, semantics_subdir, "benchmark")
 }
+out_dir <- dirname(out_prefix)
 
 TREE_FILE <- paste0(out_prefix, ".species_tree.nwk")
 TABLE_TXT <- paste0(out_prefix, ".table.txt")
@@ -71,8 +81,8 @@ get_state <- function(x) {
   if (x == "NA_struct") return("na_struct")
   if (x == "NA_fuse") return("na_fuse")
   suppressWarnings({
-    v <- as.numeric(x)
-    if (!is.na(v)) return("present")
+    v <- suppressWarnings(as.numeric(x))
+    if (!is.na(v) && is.finite(v)) return("present")
   })
   "unknown"
 }

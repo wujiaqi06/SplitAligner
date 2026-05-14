@@ -121,8 +121,8 @@ Optional argument:
 
 Main outputs:
 
-- `<free>.na_fuse.txt`
-- `<fix>.na_fuse.txt`
+- `<free_input_stem>.na_fuse.txt`
+- `<fix_input_stem>.na_fuse.txt`
 - `<final_label>.fix.na_classified.txt`
 - `<final_label>.free.na_classified.txt`
 - `<final_label>.support_b.txt` if `--species_tree` is provided
@@ -130,10 +130,15 @@ Main outputs:
 
 Interpretation:
 
-- `extract_na_fuse.pl` marks primitive-branch `NA` cells that are explained by non-NA fused-branch signal as `NA_fuse`
+- `extract_na_fuse.pl` marks primitive-branch `NA` cells that are explained by numeric fused-branch signal as `NA_fuse`
 - `confirm_na_structure.pl` compares fixed-topology and free-topology matrices on shared genes
 - the final classified outputs distinguish structural missingness from topology-induced missingness
 - if `--species_tree` is provided, `finalize` also computes branch-wise `Support` and writes an annotated species tree
+
+Examples:
+
+- `free.matrix_with_fuse.txt -> free.matrix_with_fuse.na_fuse.txt`
+- `fix.matrix_with_fuse.txt -> fix.matrix_with_fuse.na_fuse.txt`
 
 The final comparison is defined only for genes shared between the fixed-topology and free-topology inputs. If no shared genes are found, SplitAligner stops with an error.
 
@@ -141,13 +146,14 @@ The final comparison is defined only for genes shared between the fixed-topology
 
 When `--species_tree` is provided, SplitAligner computes `Support(b)` for each branch on the species-tree backbone.
 
-- denominator: number of non-NA entries for branch `b` in the fixed-topology matrix on shared genes
-- numerator: number of non-NA entries for branch `b` in the free-topology matrix on shared genes
+- denominator: number of numeric branch-length entries for branch `b` in the fixed-topology matrix on shared genes
+- numerator: number of numeric branch-length entries for branch `b` in the free-topology matrix on shared genes
 
 The resulting outputs are:
 
 - `<final_label>.support_b.txt`: branch-wise summary table
   - columns: `branch_id`, `branch_type`, `n_shared_genes`, `n_fix_non_na`, `n_free_non_na`, `support_percent`, `discordance_percent`
+  - `n_fix_non_na` and `n_free_non_na` are compatibility column names; in the current implementation they count numeric branch evidence rather than arbitrary non-NA strings
 - `<species_prefix>.support_b.nwk`: standard Newick tree with internal-node `Support` values written in the bootstrap position
 
 ---
@@ -164,13 +170,13 @@ The branch is absent as a primitive branch but represented through a fused branc
 
 ### `NA_struct`
 
-The projected branch is structurally absent after projection and is not evaluable for that gene.
+The projected branch is structurally absent after projection only when a projected side disappears entirely, so the branch has no projected identity and is not evaluable for that gene.
 
-For internal branches in the unrooted species-tree representation, this includes projected splits in which either side contains fewer than two taxa. Terminal branches are handled separately and remain evaluable when the corresponding terminal taxon is present.
+For internal branches, a projected `1|k` split is not emitted as an independently observable primitive internal branch, but it is retained for fused-path bookkeeping. If a numeric fused coordinate explains the primitive absence, the primitive cell is classified as `NA_fuse`, not `NA_struct`.
 
 ### `NA_topo`
 
-The projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree, consistent with topology-induced discordance.
+The branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree, consistent with topology-induced discordance.
 
 ---
 

@@ -1,0 +1,3 @@
+case_id	gene_id	oracle_members	splitaligner_columns	expected	observed	status	note
+case1_internal_1k_singleton	main_step3	N_15	B11	non-numeric primitive state	NA_struct	PASS	Endpoint-collapsed internal singleton should not be emitted as primitive numeric branch.
+case2_internal_1k_fused_with_terminal	main_step2	N_15|t4	B11|B5	numeric fused column plus primitive NA_fuse	composite=B5|B11; composite_value=0.8371730952; primitive_states=NA_fuse,NA_fuse	PASS	Endpoint-collapsed internal fused with terminal should emit fused pattern and primitive NA_fuse states.

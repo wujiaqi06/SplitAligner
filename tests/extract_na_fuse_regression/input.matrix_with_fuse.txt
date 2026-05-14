@@ -1,0 +1,8 @@
+gene	B1	B2	B3	B4	B5	B6	B7	B1|B2	B1|B3	B1|B4	B1|B5	B1|B6	B1|B7
+gene_numeric	NA	0	0	0	0	0	0	0.5	NA	NA	NA	NA	NA
+gene_sci	NA	0	0	0	0	0	0	NA	1e-5	NA	NA	NA	NA
+gene_na	NA	0	0	0	0	0	0	NA	NA	NA	NA	NA	NA
+gene_na_fuse	NA	0	0	0	0	0	0	NA	NA	NA	NA_fuse	NA	NA
+gene_nan	NA	0	0	0	0	0	0	NA	NA	NA	NA	NaN	NA
+gene_inf	NA	0	0	0	0	0	0	NA	NA	NA	NA	NA	Inf
+gene_blank	NA	0	0	0	0	0	0	NA	NA	NA	NA	NA	

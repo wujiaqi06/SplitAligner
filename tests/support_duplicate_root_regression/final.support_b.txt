@@ -1,0 +1,6 @@
+branch_id	branch_type	n_shared_genes	n_fix_non_na	n_free_non_na	support_percent	discordance_percent
+B1	terminal	1	1	1	100.0000000000	0.0000000000
+B2	terminal	1	1	1	100.0000000000	0.0000000000
+B3	terminal	1	1	1	100.0000000000	0.0000000000
+B4	terminal	1	1	1	100.0000000000	0.0000000000
+B5	internal	1	1	1	100.0000000000	0.0000000000

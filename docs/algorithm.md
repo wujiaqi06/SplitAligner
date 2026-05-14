@@ -34,19 +34,28 @@ Two major consequences follow:
 
 ### 1. Degenerate projected branches
 
-A species-tree branch may lose its discriminating power after taxon pruning and no longer define a meaningful split in the reduced taxon set.
+A species-tree branch may lose projected identity after taxon pruning and no longer define an independently observable primitive branch on the reduced taxon set.
 
-For internal branches in the unrooted species-tree representation, this occurs when either side of the projected split contains fewer than two taxa. Terminal branches are handled separately and remain evaluable when the corresponding terminal taxon is present.
+The current implementation distinguishes three cases:
+
+- empty projected side
+  - the branch has no projected identity and is structurally missing
+- internal `>=2|>=2`
+  - the projected split remains an independently observable primitive internal branch
+- internal `1|k`
+  - the projected split is not independently observable as a primitive internal branch, but it is retained for fused-path bookkeeping because adjacent or terminal branches may project to the same reduced split and carry numeric fused signal
 
 This corresponds to:
 
-- `NA_struct`
+- `NA_struct` for empty-side loss of projected identity
 
 ### 2. Fused projected branches
 
 Multiple distinct species-tree branches may collapse into the same projected split after pruning absent taxa.
 
 This means that the signal is represented through a fused branch rather than through a unique one-to-one correspondence.
+
+If a numeric fused coordinate explains the primitive absence, the primitive branch is classified as `NA_fuse`.
 
 This corresponds to:
 
@@ -106,7 +115,9 @@ Optionally, SplitAligner computes a branch-wise concordance score, `Support`, on
 
 In the current implementation, for each branch `b`, `Support(b)` is computed on genes shared between the fixed-topology and free-topology inputs as:
 
-`100 × [free-topology non-NA count for branch b] / [fixed-topology non-NA count for branch b]`
+`100 × n_free_numeric(b) / n_fix_numeric(b)`
+
+where both counts include only numeric branch-length evidence. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted.
 
 The resulting summary can also be written back onto the species tree as a branch-annotated output for visualization and downstream interpretation.
 
@@ -120,13 +131,15 @@ SplitAligner distinguishes several forms of missingness.
 Generic missing value before final classification.
 
 ### `NA_struct`
-The projected species-tree branch becomes structurally absent after taxon pruning. For internal branches, this includes projected splits in which either side contains fewer than two taxa; terminal branches remain evaluable when the corresponding terminal taxon is present.
+The projected species-tree branch becomes structurally absent only when a projected side disappears entirely after taxon pruning, so the branch has no projected identity for that gene.
+
+Internal `1|k` projections are treated separately: they are not emitted as independently observable primitive internal branches, but they remain fuse-eligible for downstream bookkeeping.
 
 ### `NA_fuse`
 The branch is absent as a primitive branch but represented through a fused branch after taxon pruning.
 
 ### `NA_topo`
-The projected branch is decisive under the fixed-topology comparison but absent from the free-topology gene tree, consistent with topology-induced discordance.
+The branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree, consistent with topology-induced discordance.
 
 ---
 
@@ -159,7 +172,7 @@ In short, SplitAligner is not only a support-summary method. It is a projection-
 
 ## Branch-Wise Support
 
-SplitAligner can optionally summarize branch-wise concordance on the species-tree backbone using `Support(b)`, defined in the current implementation as the ratio of free-topology non-NA counts to fixed-topology non-NA counts for the same branch on shared genes.
+SplitAligner can optionally summarize branch-wise concordance on the species-tree backbone using `Support(b)`, defined in the current implementation as the ratio of free-topology numeric-evidence counts to fixed-topology numeric-evidence counts for the same branch on shared genes.
 
 This makes `Support` a branch-resolved cross-gene concordance summary on the projected branch coordinate system. It is therefore distinct from bootstrap values or posterior support measures, even when written to the species tree in the bootstrap position for compatibility with standard Newick viewers.
 

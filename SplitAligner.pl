@@ -25,7 +25,7 @@
 #
 #   2) finalize
 #      Convert <label>.matrix_with_fuse.txt matrices into final NA-classified
-#      outputs by applying NA_fuse followed by NA_struc / NA_topo diagnosis.
+#      outputs by applying NA_fuse followed by NA_struct / NA_topo diagnosis.
 #
 #      Required arguments:
 #        --free        <free.matrix_with_fuse.txt>
@@ -248,7 +248,7 @@ sub run_finalize_mode {
             (defined $species && $species ne '' ? ('--species_tree', $species) : ()),
             '-o', $final,
         ],
-        'Classify NA_struc and NA_topo',
+        'Classify NA_struct and NA_topo',
     );
 
     for my $must_exist (
@@ -370,7 +370,7 @@ Modes:
       <label>.matrix_with_fuse.txt
 
   finalize
-    Apply NA_fuse, then classify NA_struc / NA_topo using shared genes between
+    Apply NA_fuse, then classify NA_struct / NA_topo using shared genes between
     fixed-tree and free-tree matrices. If --species_tree is provided, also
     compute branch-wise Support and write an annotated species tree.
 

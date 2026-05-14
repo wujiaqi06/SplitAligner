@@ -231,6 +231,13 @@ member_string <- function(member_ids) {
   paste(ids, collapse = "|")
 }
 
+format_branch_length_value <- function(x) {
+  if (is.na(x)) {
+    return("")
+  }
+  format(x, digits = 10, scientific = FALSE, trim = TRUE)
+}
+
 find_child_edge <- function(state, child_label) {
   which(state$edges$child_label == child_label)
 }
@@ -505,7 +512,7 @@ state_to_classification <- function(state, identity_tbl) {
     members <- sort(unique(as.character(current_members[[i]])))
     if (length(members) == 1L) {
       len_i <- state$edges$branch_length[i]
-      line[members] <- if (is.na(len_i)) "" else format(len_i, digits = 10, scientific = FALSE, trim = TRUE)
+      line[members] <- format_branch_length_value(len_i)
     } else if (length(members) >= 2L) {
       line[members] <- "NA_fuse"
       merge_groups[[length(merge_groups) + 1L]] <- members
@@ -521,6 +528,71 @@ state_to_classification <- function(state, identity_tbl) {
     na_struct = names(line)[line == "NA_struct"],
     na_fuse = names(line)[line == "NA_fuse"]
   )
+}
+
+classification_to_long_rows <- function(classification, run_id, step_id, semantics_label) {
+  branch_ids <- names(classification$line)
+  values <- unname(classification$line)
+  statuses <- ifelse(
+    values == "NA_struct",
+    "NA_struct",
+    ifelse(values == "NA_fuse", "NA_fuse", "observed")
+  )
+
+  data.frame(
+    gene_id = paste0(run_id, "_step", step_id),
+    step_id = step_id,
+    branch_id = branch_ids,
+    value = values,
+    status = statuses,
+    tree_semantics = semantics_label,
+    stringsAsFactors = FALSE
+  )
+}
+
+state_to_fusion_group_rows <- function(state,
+                                       run_id,
+                                       step_id,
+                                       member_col_name = "benchmark_members") {
+  rows <- list()
+  group_counter <- 0L
+
+  for (i in seq_len(nrow(state$edges))) {
+    members <- sort(unique(as.character(state$edges$member_ids[[i]])))
+    if (length(members) < 2L) {
+      next
+    }
+
+    group_counter <- group_counter + 1L
+    len_i <- state$edges$branch_length[i]
+    row <- data.frame(
+      gene_id = paste0(run_id, "_step", step_id),
+      step_id = step_id,
+      merge_group_id = sprintf("MG%02d", group_counter),
+      expected_fused_length = format_branch_length_value(len_i),
+      group_size = length(members),
+      stringsAsFactors = FALSE
+    )
+    row[[member_col_name]] <- paste(members, collapse = "|")
+    rows[[length(rows) + 1L]] <- row
+  }
+
+  if (length(rows) == 0L) {
+    out <- data.frame(
+      gene_id = character(),
+      step_id = integer(),
+      merge_group_id = character(),
+      expected_fused_length = character(),
+      group_size = integer(),
+      stringsAsFactors = FALSE
+    )
+    out[[member_col_name]] <- character()
+    return(out)
+  }
+
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
 }
 
 active_edges_from_state <- function(state) {

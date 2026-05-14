@@ -1,0 +1,21 @@
+Status: PASS
+Primitive cell audit: PASS
+Fusion group audit: PASS
+Shared genes: 8
+Mapped branches: 17
+Expected compared cells: 136
+Actual compared cells: 136
+Unexpected mismatches: 0
+Unmapped SplitAligner branches: (none)
+Missing expected SplitAligner branches: (none)
+Missing oracle branches: (none)
+Uncovered oracle branches: (none)
+Oracle-only genes: (none)
+SplitAligner-only genes: (none)
+Full table path: benchmark/audit/t8_to_t3_local_deletion/expected_vs_splitaligner.full.tsv
+Diff table path: benchmark/audit/t8_to_t3_local_deletion/expected_vs_splitaligner.diff.tsv
+Fusion-group rows checked: 36
+Fusion-group mismatches: 0
+Fusion full table path: benchmark/audit/t8_to_t3_local_deletion/fusion_groups.full.tsv
+Fusion diff table path: benchmark/audit/t8_to_t3_local_deletion/fusion_groups.diff.tsv
+Crosswalk mapped branches: 17

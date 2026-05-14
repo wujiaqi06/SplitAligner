@@ -1,102 +1,140 @@
-# Benchmark Final
+# Benchmark
 
-This folder packages the current Benchmark V1 working bundle for SplitAligner.
+This directory contains the SplitAligner benchmark bundle and audit scaffold.
 
-## Core Principle
+## Scope
 
-This benchmark is only meaningful if the R-side oracle stays independent of SplitAligner.
+The current packaged benchmark bundle contains two deterministic 10-tip toy scenarios:
 
-Its job is to infer `NA_struct` and `NA_fuse` explicitly from tip deletion, degree-2 contraction, and node/edge membership tracking on the frozen full-tree axis. It must not re-implement SplitAligner in R.
+- `outputs/t10_global_deletion/`
+  Global deletion series derived from the 10-tip benchmark tree.
+- `outputs/t8_to_t3_local_deletion/`
+  Local deletion series focused on the mid-tree collapse path from `t8` to `t3`.
 
-Because `NA_struct` and `NA_fuse` are defined here as consequences of pruning and contraction on the original full-tree primitive-edge axis, they are recoverable from graph-only node/edge incidence and contraction history alone. Reintroducing split logic would no longer validate SplitAligner independently, but would merely restate it in another encoding.
+Each scenario contains three benchmark-coordinate output locations:
 
-- `NA_struct` and `NA_fuse` are inferred from explicit deletion-to-edge mapping and contraction history.
-- The R benchmark must never use split-based missingness logic.
-- The R benchmark must never compute projected splits, split keys, or split-space equivalence classes.
-- Split logic belongs only to the Perl SplitAligner workflow.
+- `benchmark_rooted/`
+  Rooted oracle outputs retained as a biologically interpretable companion analysis.
+- `benchmark_unrooted/`
+  Unrooted oracle outputs used as the formal benchmark target for SplitAligner Perl.
+- `splitaligner_perl/`
+  Perl SplitAligner outputs generated from the same benchmark inputs.
 
-## Development Note
+## Why Both Rooted and Unrooted Outputs Exist
 
-Why the benchmark oracle must remain structurally independent:
+Both rooted and unrooted benchmark outputs are retained because they answer different questions.
 
-1. Initial implementations repeatedly drifted back toward split-based logic, which would have compromised oracle independence from SplitAligner.
-2. Once a split-free R-side oracle was enforced, it became clear that tip deletion induces structural collapse and degree-2 contraction, causing `NA_fuse` spillover beyond the immediately deleted local region.
-3. Purely local, recursive, or offspring-node-based heuristics were not sufficient:
-   - recursive propagation overcalled entire clades,
-   - local offspring tracking missed higher-level spillover,
-   - global deletion without explicit edge tracing still missed fused-edge cases.
-4. The final benchmark therefore uses only tree surgery, degree-2 contraction, and explicit node/edge tracking to infer `NA_struct` and `NA_fuse`, without relying on split-based representations.
+- `benchmark_rooted/` preserves rooted branch distinctions and remains useful as a companion benchmark view.
+- `benchmark_unrooted/` performs pseudo-root normalization and unrooted contraction so that branch identity is defined in the same way as the Perl SplitAligner workflow.
 
-## Purpose
+For this reason, `splitaligner_perl/` must be audited strictly against `benchmark_unrooted/`, not against `benchmark_rooted/`.
 
-This benchmark evaluates `NA_struct` and `NA_fuse` under fixed-topology pruning on a frozen full-tree primitive-edge axis.
+## Audit Rule
 
-In plainer terms, all benchmark labels are defined relative to the branch identities of the original full tree, before any pruning-induced collapse.
+Pass/fail is defined only with respect to `benchmark_unrooted/`.
 
-It is an oracle-validated benchmark bundle, not a generic phylogeny-accuracy benchmark.
+- Expected rooted-vs-unrooted differences are not treated as SplitAligner failures.
+- A passing audit has zero unexpected mismatches between `splitaligner_perl/` and `benchmark_unrooted/`.
 
-## Hard Rule
+## Audit Outputs
 
-The R-side oracle must remain structurally independent of SplitAligner.
+Each scenario produces both oracle outputs and audit outputs.
 
-- R must not use split-based logic to classify missingness.
-- R must not compute projected splits or split-space equivalence classes.
-- Split-based branch mapping remains exclusive to the Perl SplitAligner workflow.
-- The R oracle uses only graph-based tree surgery, degree-2 contraction, and explicit node/edge tracking.
+Scenario oracle outputs:
+
+- `benchmark_unrooted/benchmark.table.txt`
+  Primitive-coordinate oracle matrix used as the formal audit target.
+- `benchmark_unrooted/oracle_cell_status_long.tsv`
+  Long-form primitive-cell oracle state table.
+- `benchmark_unrooted/oracle_fusion_groups.tsv`
+  Oracle fused-coordinate expectations for grouped `NA_fuse` paths.
+- `benchmark_unrooted/benchmark.oracle_events.tsv`
+  Event-level contraction motif record.
+- `benchmark_unrooted/benchmark.trajectory.tsv`
+  Trajectory summary table.
+- `benchmark_unrooted/benchmark.schedule.tsv`
+  Frozen deletion schedule used for the packaged scenario.
+
+Scenario audit outputs:
+
+- `audit/<scenario>/expected_vs_splitaligner.full.tsv`
+  Full primitive-cell comparison table for all mapped cells.
+- `audit/<scenario>/expected_vs_splitaligner.diff.tsv`
+  Diff-only subset of the primitive-cell comparison table.
+- `audit/<scenario>/unexpected_mismatches.tsv`
+  Primitive-cell mismatches retained for quick inspection.
+- `audit/<scenario>/fusion_groups.full.tsv`
+  Full fused-coordinate audit table.
+- `audit/<scenario>/fusion_groups.diff.tsv`
+  Diff-only fused-coordinate audit table.
+- `audit/<scenario>/pass_fail_summary.txt`
+  Scenario-level pass/fail summary.
+- `audit/<scenario>/endpoint_collapse_summary.txt`
+  Tiny endpoint-collapse invariant summary for `1|k` internal-branch regression checks.
+- `audit/<scenario>/endpoint_collapse_cases.tsv`
+  Case-level endpoint-collapse checks, including singleton and terminal-fused cases.
+- `audit/<scenario>/endpoint_collapse_internal_only_groups.tsv`
+  Internal-only fused-path bookkeeping checks.
+
+The current packaged audit validates:
+
+- primitive-cell state agreement between `splitaligner_perl/` and `benchmark_unrooted/`
+- active fused-coordinate agreement plus synthetic composite sum consistency
+- endpoint-collapse invariants for `1|k` internal-branch cases
+
+It does not currently package broader trajectory statistics such as ARI/Jaccard-style partition summaries.
+
+The endpoint-collapse invariant test is implemented by:
+
+- `scripts/test_endpoint_collapse_invariants.py`
+
+This is a scenario-specific regression check for the packaged endpoint-collapse / local-deletion benchmark bundle. It uses fixed expected branch and gene identifiers from the current packaged scenarios and is not intended as a generic arbitrary-scenario validator.
+
+This small regression script checks that:
+
+- an endpoint-collapsed internal singleton is not emitted as a primitive numeric branch
+- an endpoint-collapsed internal branch fused with a terminal branch produces a numeric fused coordinate and `NA_fuse` primitive members
+- internal-only fused bookkeeping groups remain explicitly represented when they occur
+
+In the current packaged audit, finite numeric Perl composite columns are separated into two cases. If all primitive component branches are finite numeric for a gene, the composite column is treated as a synthetic compatibility value and must equal the sum of its primitive components. If one or more primitive components are not finite numeric, the composite column is treated as an active fused-coordinate signal and must correspond to an oracle-expected merge group for the same gene. Composite columns with `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, `-Inf`, or empty values are not treated as numeric fused-coordinate evidence.
 
 ## Directory Layout
 
-- `inputs/`
-  - example tree input used for the packaged benchmark run
-- `scripts/`
-  - `benchmark.R`: graph-only benchmark driver
-  - `oracle_utils.R`: graph-only oracle utilities
-  - `plot_fulltree_collapse.R`: cumulative collapse plot on the full tree
-- `outputs/`
-  - `unrooted/`
-  - `rooted/`
-  - benchmark tables, tree files, and plotted PDFs separated by tree semantics
 - `docs/`
-  - benchmark specification and tasklist
+  Benchmark specification and implementation notes.
+- `inputs/`
+  Shared benchmark input trees and related source material.
+- `scripts/`
+  R-side oracle driver and utilities.
+- `outputs/rooted_species_tree_branch_labels.pdf`
+  Shared rooted 10-tip branch-label diagram used by both toy scenarios.
+- `outputs/unrooted_species_tree_branch_labels.pdf`
+  Shared unrooted 10-tip branch-label diagram used by both toy scenarios.
+- `outputs/t10_global_deletion/`
+  Scenario-specific output folders plus `branch_label_map.tsv`.
+- `outputs/t8_to_t3_local_deletion/`
+  Scenario-specific output folders plus `branch_label_map.tsv`.
+- `audit/t10_global_deletion/`
+  Audit tables comparing Perl outputs against `benchmark_unrooted/`.
+- `audit/t8_to_t3_local_deletion/`
+  Audit tables comparing Perl outputs against `benchmark_unrooted/`.
 
-## Main Inputs and Outputs
+## Branch Label Maps
 
-Primary generated files are written into one of:
+Each scenario includes a `branch_label_map.tsv` file with these columns:
 
-- `outputs/unrooted/`
-- `outputs/rooted/`
+- `splitaligner_branch`
+- `benchmark_unrooted_branch`
+- `benchmark_rooted_branch`
+- `split`
+- `note`
 
-Each semantics-specific output directory contains:
+These maps are used to align branch coordinates across the Perl and benchmark outputs without altering the expected biological or mathematical results.
 
-- `benchmark.species_tree.nwk`
-- `benchmark.gene_trees.nwk`
-- `benchmark.table.txt`
-- `benchmark.oracle_events.tsv`
-- `benchmark.trajectory.tsv`
-- `benchmark.fulltree_collapse.pdf`
+## Current Packaging State
 
-## Run
+The benchmark directory is scaffolded around the two packaged deterministic toy scenarios described above. Scenario folders may contain committed rooted, unrooted, Perl, and audit outputs for the current benchmark release.
 
-Edit `scripts/benchmark.R` to choose `TREE_SEMANTICS <- "unrooted"` or `TREE_SEMANTICS <- "rooted"`. Benchmark V1 defaults to `unrooted` to match SplitAligner. By default, the packaged run therefore writes into `outputs/unrooted/`.
+When the benchmark workflow is rerun, generated rooted, unrooted, and Perl outputs should be written directly into the matching scenario subfolders above, and audit artifacts should be written into the corresponding `audit/` directory.
 
-From this folder:
-
-```bash
-Rscript scripts/benchmark.R
-```
-
-This writes the benchmark tables into `outputs/unrooted/` or `outputs/rooted/` and automatically generates a matching collapse PDF in the same directory.
-
-If needed, the plotting step can also be rerun by itself:
-
-```bash
-Rscript scripts/plot_fulltree_collapse.R
-```
-
-## Notes
-
-- The packaged default is `MAX_DELETE_FRACTION = 0.7` because it produces a clearer collapse trajectory for visualization and a more expressive benchmark figure.
-- `species_tree.nwk` and `gene_trees.nwk` are formatted to help align the benchmark with the Perl SplitAligner workflow.
-- The benchmark tables are intended for direct sanity checking: any numeric cell that has already absorbed contraction-induced branch-length summation should instead have been marked `NA_fuse`.
-- The rooted and unrooted modes are intentionally different. In `unrooted` mode, the benchmark now performs explicit pseudo-root normalization and unrooted degree-2 contraction, so branches that become indistinguishable only under the unrooted interpretation are merged exactly as in SplitAligner. In `rooted` mode, the benchmark retains rooted branch distinctions and therefore serves as a separate, biologically interpretable companion analysis rather than as the primary SplitAligner comparison target.
-- Historical experiments and failed drafts are intentionally excluded from this packaged folder.
+Random deletion remains a valid Benchmark V1 extension, but it is not part of the current packaged audit bundle.

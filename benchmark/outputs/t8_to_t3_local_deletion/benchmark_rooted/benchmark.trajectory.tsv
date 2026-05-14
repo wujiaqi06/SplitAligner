@@ -1,0 +1,9 @@
+run_id	step_id	n_tips	deleted_tip	na_struct_count	na_fuse_count	fusion_burden	max_group_size	num_groups_ge2	active_edge_count
+main	0	10	NA	0	0	0	1	0	18
+main	1	9	t8	1	2	1	2	1	17
+main	2	8	t7	2	4	2	2	2	16
+main	3	7	t4	4	3	2	3	1	14
+main	4	6	t9	7	2	1	2	1	11
+main	5	5	t5	8	4	2	2	2	10
+main	6	4	t2	10	4	2	2	2	8
+main	7	3	t3	11	5	3	3	2	7

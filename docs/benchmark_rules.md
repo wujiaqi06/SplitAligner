@@ -27,6 +27,14 @@ For benchmark comparisons:
 - An R implementation may be developed for comparison, but it must remain a genuinely node-based alternative.
 - The benchmark must not blur the distinction between SplitAligner's projected split-space framework and an external node-based comparator.
 
+## Audit Target
+
+Packaged benchmark audits compare `splitaligner_perl` strictly against `benchmark_unrooted`.
+
+`benchmark_rooted` outputs are retained as reference outputs for rooted-label conventions and are expected to differ in root-adjacent cases. Such rooted/unrooted differences are not benchmark failures.
+
+A benchmark scenario passes only when `splitaligner_perl` matches `benchmark_unrooted` with zero unexpected mismatches.
+
 ## Why This Boundary Exists
 
 The goal of the benchmark is to compare distinct methodological strategies fairly.

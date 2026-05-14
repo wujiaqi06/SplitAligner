@@ -1,0 +1,37 @@
+gene_id	step_id	merge_group_id	benchmark_unrooted_members	group_size	expected_fused_length	splitaligner_composite_column	splitaligner_value	artifact_type
+main_step1	1	MG01	N_13|N_14	2	1.460880017	B12|B13	1.460880017	match
+main_step2	2	MG01	N_13|N_14	2	1.460880017	B12|B13	1.460880017	match
+main_step2	2	MG02	N_15|t4	2	0.8371730952	B5|B11	0.8371730952	match
+main_step3	3	MG01	N_13|N_14|t9	3	2.296884277	B6|B12|B13	2.296884277	match
+main_step4	4	MG01	N_12|t1	2	1.127601897	B2|B14	1.127601897	match
+main_step5	5	MG01	N_12|t1	2	1.127601897	B2|B14	1.127601897	match
+main_step5	5	MG02	N_17|t2	2	1.496224871	B8|B15	1.496224871	match
+main_step6	6	MG01	N_12|t1	2	1.127601897	B2|B14	1.127601897	match
+main_step6	6	MG02	N_16|N_18	2	0.7415439566	B16|B17	0.7415439566	match
+main_step7	7	MG01	N_12|t1	2	1.127601897	B2|B14	1.127601897	match
+main_step7	7	MG02	N_16|N_18|t6	3	0.7488781035	B10|B16|B17	0.7488781035	match
+main_step0			N_12|t1	2		B2|B14	1.1276018966	synthetic_composite_match
+main_step0			N_15|t4	2		B5|B11	0.8371730952	synthetic_composite_match
+main_step0			N_13|N_14|t9	3		B6|B12|B13	2.2968842769	synthetic_composite_match
+main_step0			N_17|t2	2		B8|B15	1.4962248707	synthetic_composite_match
+main_step0			N_16|N_18|t6	3		B10|B16|B17	0.748878103476	synthetic_composite_match
+main_step0			N_13|N_14	2		B12|B13	1.4608800169	synthetic_composite_match
+main_step0			N_16|N_18	2		B16|B17	0.741543956595	synthetic_composite_match
+main_step1			N_12|t1	2		B2|B14	1.1276018966	synthetic_composite_match
+main_step1			N_15|t4	2		B5|B11	0.8371730952	synthetic_composite_match
+main_step1			N_17|t2	2		B8|B15	1.4962248707	synthetic_composite_match
+main_step1			N_16|N_18|t6	3		B10|B16|B17	0.748878103476	synthetic_composite_match
+main_step1			N_16|N_18	2		B16|B17	0.741543956595	synthetic_composite_match
+main_step2			N_12|t1	2		B2|B14	1.1276018966	synthetic_composite_match
+main_step2			N_17|t2	2		B8|B15	1.4962248707	synthetic_composite_match
+main_step2			N_16|N_18|t6	3		B10|B16|B17	0.748878103476	synthetic_composite_match
+main_step2			N_16|N_18	2		B16|B17	0.741543956595	synthetic_composite_match
+main_step3			N_12|t1	2		B2|B14	1.1276018966	synthetic_composite_match
+main_step3			N_17|t2	2		B8|B15	1.4962248707	synthetic_composite_match
+main_step3			N_16|N_18|t6	3		B10|B16|B17	0.748878103476	synthetic_composite_match
+main_step3			N_16|N_18	2		B16|B17	0.741543956595	synthetic_composite_match
+main_step4			N_17|t2	2		B8|B15	1.4962248707	synthetic_composite_match
+main_step4			N_16|N_18|t6	3		B10|B16|B17	0.748878103476	synthetic_composite_match
+main_step4			N_16|N_18	2		B16|B17	0.741543956595	synthetic_composite_match
+main_step5			N_16|N_18|t6	3		B10|B16|B17	0.748878103476	synthetic_composite_match
+main_step5			N_16|N_18	2		B16|B17	0.741543956595	synthetic_composite_match

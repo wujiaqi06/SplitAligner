@@ -1,0 +1,5 @@
+A..B..C||D	B4
+A..B..D||C	B3
+A..B||C..D	B5
+A..C..D||B	B2
+A||B..C..D	B1

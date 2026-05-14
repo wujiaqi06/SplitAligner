@@ -10,15 +10,15 @@ authors:
 repository-code: "https://github.com/wujiaqi06/SplitAligner"
 url: "https://github.com/wujiaqi06/SplitAligner"
 license: "MIT"
-version: "v1.1.1"
-date-released: "2026-03-17"
+version: "v1.2.0"
+date-released: "2026-05-14"
 preferred-citation:
   type: article
   authors:
     - family-names: "Wu"
       given-names: "Jiaqi"
       affiliation: "Graduate School of Integrated Sciences for Life, Hiroshima University"
-  title: "SplitAligner: A Gene–Species Tree Reconciliation Framework Using Split-Based Branch Mapping"
+  title: "SplitAligner: A Gene-Species Tree Reconciliation Framework Using Split-Based Branch Mapping"
   journal: "bioRxiv"
   year: 2026
   doi: "10.64898/2026.02.24.707838"

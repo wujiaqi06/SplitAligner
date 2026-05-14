@@ -1,0 +1,7 @@
+branch_id	sub_tree	type	note
+B1	A	terminal	
+B2	B	terminal	
+B3	C	terminal	
+B4	D	terminal	
+B5	(A:B1,B:B2)	internal	duplicate_unrooted_split_winner_over=B6
+B6	(C:B3,D:B4)	internal	duplicate_unrooted_split_loser_of=B5

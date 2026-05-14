@@ -1,0 +1,9 @@
+step_id	schedule_type	start_rank	deleted_tip_label	retained_tip_count	max_delete_count	deleted_tip_labels	retained_tip_labels
+0	fixed_middelete_t8_to_t3	3	NA	10	7		t10,t1,t8,t7,t4,t9,t5,t2,t3,t6
+1	fixed_middelete_t8_to_t3	3	t8	9	7	t8	t10,t1,t7,t4,t9,t5,t2,t3,t6
+2	fixed_middelete_t8_to_t3	3	t7	8	7	t8,t7	t10,t1,t4,t9,t5,t2,t3,t6
+3	fixed_middelete_t8_to_t3	3	t4	7	7	t8,t7,t4	t10,t1,t9,t5,t2,t3,t6
+4	fixed_middelete_t8_to_t3	3	t9	6	7	t8,t7,t4,t9	t10,t1,t5,t2,t3,t6
+5	fixed_middelete_t8_to_t3	3	t5	5	7	t8,t7,t4,t9,t5	t10,t1,t2,t3,t6
+6	fixed_middelete_t8_to_t3	3	t2	4	7	t8,t7,t4,t9,t5,t2	t10,t1,t3,t6
+7	fixed_middelete_t8_to_t3	3	t3	3	7	t8,t7,t4,t9,t5,t2,t3	t10,t1,t6

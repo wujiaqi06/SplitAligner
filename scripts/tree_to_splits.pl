@@ -65,35 +65,74 @@ if ($mode eq 'species') {
 
     open(my $SPEC,  '>', $splits_file) or die "[ERROR] Cannot write $splits_file: $!\n";
     open(my $MAP,   '>', $map_file)    or die "[ERROR] Cannot write $map_file: $!\n";
-    print {$MAP} "branch_id\tsub_tree\ttype\n";
+    print {$MAP} "branch_id\tsub_tree\ttype\tnote\n";
 
-    foreach my $node (keys %subtrees) {
-        # Keep only the branch label part; strip any prefix before ':' if present.
-        $subtrees{$node} =~ s/\S+://;
+    my @axis_entries;
+    for my $node (subtree_nodes_in_branch_order(\%subtrees)) {
+        my $branch_id = extract_branch_id($subtrees{$node});
+        next unless defined $branch_id;
 
         my (@left, @right);
+        my ($type, $canonical_split);
         if ($node =~ /\(/) {
             @left  = collect_tip_taxa($node);
             @right = subtract_array_multiset(\@all_tips, \@left);
             my $left_s  = join("..", sort @left);
             my $right_s = join("..", sort @right);
-            my $split   = join("||", sort ($left_s, $right_s));
-
-            if ($left_s ne '' && $right_s ne '') {
-                print {$SPEC} "$split\t$subtrees{$node}\n";
-                print {$MAP}  "$subtrees{$node}\t$node\tinternal\n";
-            } else {
-                print {$MAP}  "$subtrees{$node}\t$node\troot\n";
-            }
+            $canonical_split = join("||", sort ($left_s, $right_s));
+            $type = ($left_s ne '' && $right_s ne '') ? 'internal' : 'root';
         } else {
             @left  = ($node);
             @right = subtract_array_multiset(\@all_tips, \@left);
             my $left_s  = join("..", sort @left);
             my $right_s = join("..", sort @right);
-            my $split   = join("||", sort ($left_s, $right_s));
-            print {$SPEC} "$split\t$subtrees{$node}\n";
-            print {$MAP}  "$subtrees{$node}\t$node\tterminal\n";
+            $canonical_split = join("||", sort ($left_s, $right_s));
+            $type = 'terminal';
         }
+
+        push @axis_entries, {
+            branch_id => $branch_id,
+            node      => $node,
+            type      => $type,
+            split     => $canonical_split,
+        };
+    }
+
+    my (%split_rep, %split_losers);
+    for my $entry (@axis_entries) {
+        next if $entry->{type} eq 'root';
+        my $split = $entry->{split};
+        if (!exists $split_rep{$split}) {
+            $split_rep{$split} = $entry;
+            next;
+        }
+
+        my $current = $split_rep{$split};
+        if (branch_id_num($entry->{branch_id}) < branch_id_num($current->{branch_id})) {
+            push @{ $split_losers{$split} }, $current->{branch_id};
+            $split_rep{$split} = $entry;
+        } else {
+            push @{ $split_losers{$split} }, $entry->{branch_id};
+        }
+    }
+
+    for my $split (sort split_sort keys %split_rep) {
+        my $entry = $split_rep{$split};
+        print {$SPEC} "$split\t$entry->{branch_id}\n";
+    }
+
+    for my $entry (@axis_entries) {
+        my $note = '';
+        if ($entry->{type} ne 'root' && exists $split_rep{$entry->{split}}) {
+            my $winner = $split_rep{$entry->{split}}{branch_id};
+            if ($winner ne $entry->{branch_id}) {
+                $note = "duplicate_unrooted_split_loser_of=$winner";
+            } elsif (exists $split_losers{$entry->{split}}) {
+                my @losers = sort_branch_ids(@{ $split_losers{$entry->{split}} });
+                $note = "duplicate_unrooted_split_winner_over=" . join('|', @losers);
+            }
+        }
+        print {$MAP} join("\t", $entry->{branch_id}, $entry->{node}, $entry->{type}, $note), "\n";
     }
 
     close $SPEC;
@@ -267,6 +306,15 @@ sub strip_internal_node_labels {
     return $body;
 }
 
+sub extract_branch_id {
+    my ($annotation) = @_;
+    return undef unless defined $annotation;
+    if ($annotation =~ /(?:^|:)(B\d+)(?:$|[:;])/ ) {
+        return $1;
+    }
+    return undef;
+}
+
 sub subtract_array_multiset {
     my ($arr1_ref, $arr2_ref) = @_;
     my %count2;
@@ -286,4 +334,31 @@ sub subtract_array_multiset {
 sub uniq {
     my %seen;
     return grep { !$seen{$_}++ } @_;
+}
+
+sub branch_id_num {
+    my ($branch_id) = @_;
+    return 9**9**9 unless defined $branch_id && $branch_id =~ /^B(\d+)$/;
+    return $1;
+}
+
+sub sort_branch_ids {
+    return sort {
+        branch_id_num($a) <=> branch_id_num($b) || $a cmp $b
+    } @_;
+}
+
+sub subtree_nodes_in_branch_order {
+    my ($subtrees_ref) = @_;
+    return sort {
+        branch_id_num(extract_branch_id($subtrees_ref->{$a}))
+            <=>
+        branch_id_num(extract_branch_id($subtrees_ref->{$b}))
+        ||
+        $a cmp $b
+    } keys %{$subtrees_ref};
+}
+
+sub split_sort {
+    return $a cmp $b;
 }
