@@ -1,0 +1,8 @@
+gene	B1	B2	B3	B4	B5	B6	B7
+gene_numeric	F	D	D	D	D	D	D
+gene_sci	F	D	D	D	D	D	D
+gene_na	F	D	D	D	D	D	D
+gene_na_fuse	F	D	D	D	D	D	D
+gene_nan	F	D	D	D	D	D	D
+gene_inf	F	D	D	D	D	D	D
+gene_blank	F	D	D	D	D	D	D

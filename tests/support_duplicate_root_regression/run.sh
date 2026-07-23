@@ -4,20 +4,21 @@ set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-OUT_PREFIX="$TEST_DIR/final"
-SUPPORT_TREE="$TEST_DIR/species_tree.support_b.nwk"
-
-rm -f "$OUT_PREFIX.fix.na_classified.txt" \
-      "$OUT_PREFIX.free.na_classified.txt" \
-      "$OUT_PREFIX.support_b.txt" \
-      "$SUPPORT_TREE"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+OUT_PREFIX="$TMP_DIR/final"
+SUPPORT_TREE="$TMP_DIR/species_tree.support_b.nwk"
+cp "$TEST_DIR/species_tree.forSplit.nwk" "$TMP_DIR/species_tree.forSplit.nwk"
+cp "$TEST_DIR/species_tree.branch_map.txt" "$TMP_DIR/species_tree.branch_map.txt"
 
 (
-  cd "$TEST_DIR"
+  cd "$TMP_DIR"
   perl "$REPO_ROOT/scripts/confirm_na_structure.pl" \
     --fix "$TEST_DIR/fix.matrix_with_fuse.txt" \
     --free "$TEST_DIR/free.matrix_with_fuse.txt" \
-    --species_tree "$TEST_DIR/species_tree.forSplit.nwk" \
+    --fix_state "$TEST_DIR/input.primitive_state.tsv" \
+    --free_state "$TEST_DIR/input.primitive_state.tsv" \
+    --species_tree "$TMP_DIR/species_tree.forSplit.nwk" \
     -o "$OUT_PREFIX"
 )
 

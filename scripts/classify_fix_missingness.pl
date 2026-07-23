@@ -3,59 +3,79 @@
 # Script:      classify_fix_missingness.pl
 # Author:      Jiaqi Wu (wujiaqi@hiroshima-u.ac.jp)
 # Description:
-#   Finalize a fixed-topology matrix after NA_fuse marking. In the fix-only
-#   setting, any remaining generic NA is interpreted as NA_struct.
+#   Finalize a fixed-topology matrix after NA_fuse marking using explicit
+#   per-cell coordinate state. Only STRUCT_ABSENT cells become NA_struct.
 #
 # Inputs:
 #   --fix / -i     <fix.matrix_with_fuse.na_fuse.txt>
 #   --output / -o  <final_fix.fix.na_classified.txt>
 #
 # Output:
-#   A primitive-branch matrix where remaining NA cells are rewritten as
-#   NA_struct and existing numeric / NA_fuse values are preserved.
+#   A primitive-branch matrix where structural cells are NA_struct and
+#   nonstructural unavailable values remain residual NA.
 # ==============================================================================
 
 use strict;
 use warnings;
 use Getopt::Long qw(GetOptions);
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib";
+use SplitAligner::CoordinateState qw(
+    read_matrix_table
+    read_state_matrix
+    validate_state_for_matrix
+);
+use SplitAligner::TextIO qw(
+    configure_utf8_stdio
+    decode_argv_utf8
+    write_utf8_file
+);
 
-my ($fix_in, $out);
+decode_argv_utf8();
+configure_utf8_stdio();
+
+my ($fix_in, $state_in, $out);
 
 GetOptions(
     'fix|i=s'    => \$fix_in,
+    'state|s=s'  => \$state_in,
     'output|o=s' => \$out,
 ) or die usage();
 
 die usage() unless defined $fix_in && $fix_in ne '';
 die "[ERROR] Cannot find input file: $fix_in\n" unless -e $fix_in;
+die usage() unless defined $state_in && $state_in ne '';
+die "[ERROR] Cannot find state file: $state_in\n" unless -e $state_in;
 die usage() unless defined $out && $out ne '';
 
-open(my $IN, '<', $fix_in) or die "[ERROR] Cannot open $fix_in: $!\n";
-open(my $OUT, '>', $out) or die "[ERROR] Cannot write $out: $!\n";
+my $matrix = read_matrix_table($fix_in);
+my $state = read_state_matrix($state_in);
+validate_state_for_matrix(
+    state          => $state,
+    matrix         => $matrix,
+    axis           => $matrix->{primitive},
+    role           => 'fix-only classification input',
+    allow_na_fuse  => 1,
+);
 
-my $row_no = 0;
-while (my $line = <$IN>) {
-    chomp $line;
-    $row_no++;
+my %matrix_index = map { $matrix->{branches}[$_] => $_ } 0 .. $#{$matrix->{branches}};
+my %state_index = map { $state->{axis}[$_] => $_ } 0 .. $#{$state->{axis}};
+my @output = (join("\t", 'gene', @{$matrix->{primitive}}));
 
-    my @fields = split(/\t/, $line, -1);
-    if ($row_no == 1) {
-        print {$OUT} join("\t", @fields) . "\n";
-        next;
+for my $gene (@{$matrix->{genes}}) {
+    my @values = @{$matrix->{rows}{$gene}};
+    my @states = @{$state->{rows}{$gene}};
+    my @classified;
+    for my $branch (@{$matrix->{primitive}}) {
+        my $value = $values[ $matrix_index{$branch} ];
+        my $code = $states[ $state_index{$branch} ];
+        $value = 'NA_struct' if $value eq 'NA' && $code eq 'S';
+        push @classified, $value;
     }
-
-    for my $i (1 .. $#fields) {
-        next unless defined $fields[$i];
-        if ($fields[$i] eq 'NA') {
-            $fields[$i] = 'NA_struct';
-        }
-    }
-
-    print {$OUT} join("\t", @fields) . "\n";
+    push @output, join("\t", $gene, @classified);
 }
 
-close $IN;
-close $OUT;
+write_utf8_file($out, join("\n", @output) . "\n");
 
 print STDERR "[INFO] Wrote: $out\n";
 exit 0;
@@ -63,6 +83,6 @@ exit 0;
 sub usage {
     return <<"USAGE";
 Usage:
-  perl $0 --fix <fix.matrix_with_fuse.na_fuse.txt> --output <final_fix.fix.na_classified.txt>
+  perl $0 --fix <fix.matrix_with_fuse.na_fuse.txt> --state <fix.primitive_state.tsv> --output <final_fix.fix.na_classified.txt>
 USAGE
 }

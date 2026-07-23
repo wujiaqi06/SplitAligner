@@ -10,10 +10,8 @@
 #   Reconciles the "free-topology" and "fixed-topology" gene branch matrices to
 #   distinguish the biological nature of missing data (NA).
 #
-#   Differential diagnosis (per gene × branch cell):
-#     - NA in BOTH free and fixed matrices  -> NA_struct (structural / missing signal)
-#     - value in fixed but NA in free       -> NA_topo  (topological discordance; e.g., ILS)
-#     - otherwise                           -> keep original value/NA
+#   Differential diagnosis uses explicit S/D/F/U coordinate-state sidecars.
+#   Numeric missingness alone is never interpreted as structural absence.
 #
 # Inputs:
 #   --fix  <fix_matrix>   : matrix generated from fixed-topology gene trees
@@ -38,80 +36,68 @@ use warnings;
 use Getopt::Long;
 use File::Basename qw(basename);
 use File::Spec;
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib";
+use SplitAligner::Newick qw(is_numeric_value);
+use SplitAligner::CoordinateState qw(
+    read_matrix_table
+    read_state_matrix
+    validate_state_for_matrix
+);
+use SplitAligner::TextIO qw(
+    configure_utf8_stdio
+    decode_argv_utf8
+    read_utf8_file
+    read_utf8_lines
+    write_utf8_file
+);
 
-my ($fix_matrix_path, $free_matrix_path, $species_tree_path, $out_prefix);
+decode_argv_utf8();
+configure_utf8_stdio();
+
+my ($fix_matrix_path, $free_matrix_path, $fix_state_path, $free_state_path,
+    $species_tree_path, $out_prefix);
 
 GetOptions(
     'fix=s'          => \$fix_matrix_path,
     'free=s'         => \$free_matrix_path,
+    'fix_state=s'    => \$fix_state_path,
+    'free_state=s'   => \$free_state_path,
     'species_tree=s' => \$species_tree_path,
     'o=s'            => \$out_prefix,
 ) or die "[ERROR] Invalid command line arguments.\n";
 
-die "Usage: $0 --fix <fix_matrix> --free <free_matrix> [--species_tree <species_tree.forSplit.nwk>] -o <out_prefix>\n"
-    unless defined $fix_matrix_path && defined $free_matrix_path && defined $out_prefix;
+die "Usage: $0 --fix <fix_matrix> --free <free_matrix> --fix_state <fix_state.tsv> --free_state <free_state.tsv> [--species_tree <species_tree.forSplit.nwk>] -o <out_prefix>\n"
+    unless defined $fix_matrix_path && defined $free_matrix_path
+        && defined $fix_state_path && defined $free_state_path && defined $out_prefix;
 
 my $out_fix  = "$out_prefix.fix.na_classified.txt";
 my $out_free = "$out_prefix.free.na_classified.txt";
 my $out_support = "$out_prefix.support_b.txt";
 
-# -------------------------
-# Read FIX matrix
-# -------------------------
-my (%fix_row, @fix_branches, $fix_header_line);
-open(my $FIX, '<', $fix_matrix_path) or die "[ERROR] Cannot open $fix_matrix_path: $!\n";
+my $fix_matrix = read_matrix_table($fix_matrix_path);
+my $free_matrix = read_matrix_table($free_matrix_path);
+my $fix_state = read_state_matrix($fix_state_path);
+my $free_state = read_state_matrix($free_state_path);
+validate_state_for_matrix(
+    state => $fix_state, matrix => $fix_matrix, axis => $fix_matrix->{primitive},
+    role => 'FIX finalization input', allow_na_fuse => 1, allow_classified => 1,
+);
+validate_state_for_matrix(
+    state => $free_state, matrix => $free_matrix, axis => $free_matrix->{primitive},
+    role => 'FREE finalization input', allow_na_fuse => 1, allow_classified => 1,
+);
 
-my $line_no = 0;
-while (my $line = <$FIX>) {
-    chomp $line;
-    next if $line =~ /^\s*$/;
-    $line_no++;
-
-    my @f = split(/\t/, $line, -1);
-
-    if ($line_no == 1) {
-        $fix_header_line = $line;
-        @fix_branches = @f[1 .. $#f];
-        next;
-    }
-
-    my $gene = $f[0];
-    next unless defined $gene && $gene ne '';
-    $fix_row{$gene} = join("\t", @f[1 .. $#f]);
-}
-close $FIX;
-
-die "[ERROR] FIX matrix appears empty or missing header: $fix_matrix_path\n"
-    unless defined $fix_header_line;
-
-# -------------------------
-# Read FREE matrix
-# -------------------------
-my (%free_row, @free_branches, $free_header_line);
-open(my $FREE, '<', $free_matrix_path) or die "[ERROR] Cannot open $free_matrix_path: $!\n";
-
-$line_no = 0;
-while (my $line = <$FREE>) {
-    chomp $line;
-    next if $line =~ /^\s*$/;
-    $line_no++;
-
-    my @f = split(/\t/, $line, -1);
-
-    if ($line_no == 1) {
-        $free_header_line = $line;
-        @free_branches = @f[1 .. $#f];
-        next;
-    }
-
-    my $gene = $f[0];
-    next unless defined $gene && $gene ne '';
-    $free_row{$gene} = join("\t", @f[1 .. $#f]);
-}
-close $FREE;
-
-die "[ERROR] FREE matrix appears empty or missing header: $free_matrix_path\n"
-    unless defined $free_header_line;
+my @fix_branches = @{$fix_matrix->{branches}};
+my @free_branches = @{$free_matrix->{branches}};
+my $fix_header_line = join("\t", 'gene', @fix_branches);
+my $free_header_line = join("\t", 'gene', @free_branches);
+my %fix_row = map {
+    $_ => join("\t", @{$fix_matrix->{rows}{$_}})
+} @{$fix_matrix->{genes}};
+my %free_row = map {
+    $_ => join("\t", @{$free_matrix->{rows}{$_}})
+} @{$free_matrix->{genes}};
 
 # -------------------------
 # Sanity check: branch axis
@@ -140,7 +126,7 @@ if ($fix_axis eq $free_axis) {
 # -------------------------
 # Shared gene check
 # -------------------------
-my @shared_genes = grep { exists $free_row{$_} } sort keys %fix_row;
+my @shared_genes = grep { exists $free_row{$_} } @{$fix_matrix->{genes}};
 
 my $n_fix       = scalar(keys %fix_row);
 my $n_free      = scalar(keys %free_row);
@@ -157,8 +143,8 @@ print STDERR "[INFO] FREE-only genes     : $n_free_only\n";
 die "[ERROR] No shared genes were found between FIX and FREE matrices. Please check whether the two inputs were generated from comparable gene sets and whether gene IDs are consistent.\n"
     if $n_shared == 0;
 
-my @fix_only_genes  = grep { !exists $free_row{$_} } sort keys %fix_row;
-my @free_only_genes = grep { !exists $fix_row{$_} } sort keys %free_row;
+my @fix_only_genes  = grep { !exists $free_row{$_} } @{$fix_matrix->{genes}};
+my @free_only_genes = grep { !exists $fix_row{$_} } @{$free_matrix->{genes}};
 my @gene_id_alias_matches = detect_hyphen_underscore_aliases(\@fix_only_genes, \@free_only_genes);
 
 if (@gene_id_alias_matches) {
@@ -174,15 +160,6 @@ if (@gene_id_alias_matches) {
         ". Please harmonize gene IDs in the input gene-tree files before rerunning SplitAligner.\n";
 }
 
-# -------------------------
-# Open outputs only after validation
-# -------------------------
-open(my $OUT_FIX,  '>', $out_fix)  or die "[ERROR] Cannot write $out_fix: $!\n";
-open(my $OUT_FREE, '>', $out_free) or die "[ERROR] Cannot write $out_free: $!\n";
-
-print {$OUT_FIX}  "$fix_header_line\n";
-print {$OUT_FREE} "$free_header_line\n";
-
 my %support_stats = initialize_support_stats(
     fix_rows     => \%fix_row,
     free_rows    => \%free_row,
@@ -191,45 +168,42 @@ my %support_stats = initialize_support_stats(
     shared_genes => \@shared_genes,
 );
 
-# -------------------------
-# Classify NA types
-# -------------------------
+my %fix_state_index = map { $fix_state->{axis}[$_] => $_ } 0 .. $#{$fix_state->{axis}};
+my %free_state_index = map { $free_state->{axis}[$_] => $_ } 0 .. $#{$free_state->{axis}};
+my @out_fix_lines = ($fix_header_line);
+my @out_free_lines = ($free_header_line);
+
 for my $gene (@shared_genes) {
     my @free_vals = split(/\t/, $free_row{$gene}, -1);
     my %free = map { $free_branches[$_] => $free_vals[$_] } 0 .. $#free_branches;
 
     my @fix_vals = split(/\t/, $fix_row{$gene}, -1);
     my %fix = map { $fix_branches[$_] => $fix_vals[$_] } 0 .. $#fix_branches;
+    my @fix_states = @{$fix_state->{rows}{$gene}};
+    my @free_states = @{$free_state->{rows}{$gene}};
 
     for my $b (@free_branches) {
         next unless exists $fix{$b};
 
-        if ($fix{$b} eq 'NA' && $free{$b} eq 'NA') {
-            $fix{$b}  = 'NA_struct';
+        my $fix_code = $fix_states[ $fix_state_index{$b} ];
+        my $free_code = $free_states[ $free_state_index{$b} ];
+        $fix{$b} = 'NA_struct' if $fix{$b} eq 'NA' && $fix_code eq 'S';
+
+        if ($free{$b} eq 'NA' && $free_code eq 'S') {
             $free{$b} = 'NA_struct';
         }
-        elsif (is_numeric_branch_evidence($fix{$b}) && $free{$b} eq 'NA') {
+        elsif ($free{$b} eq 'NA' && $free_code eq 'U'
+            && $fix_code eq 'D' && is_numeric_branch_evidence($fix{$b})) {
             $free{$b} = 'NA_topo';
         }
     }
 
-    print {$OUT_FIX} $gene;
-    for my $b (@fix_branches) {
-        my $v = exists $fix{$b} ? $fix{$b} : 'NA';
-        print {$OUT_FIX} "\t$v";
-    }
-    print {$OUT_FIX} "\n";
-
-    print {$OUT_FREE} $gene;
-    for my $b (@free_branches) {
-        my $v = exists $free{$b} ? $free{$b} : 'NA';
-        print {$OUT_FREE} "\t$v";
-    }
-    print {$OUT_FREE} "\n";
+    push @out_fix_lines, join("\t", $gene, map { $fix{$_} // 'NA' } @fix_branches);
+    push @out_free_lines, join("\t", $gene, map { $free{$_} // 'NA' } @free_branches);
 }
 
-close $OUT_FIX;
-close $OUT_FREE;
+write_utf8_file($out_fix, join("\n", @out_fix_lines) . "\n");
+write_utf8_file($out_free, join("\n", @out_free_lines) . "\n");
 
 print STDERR "[INFO] Wrote: $out_fix\n";
 print STDERR "[INFO] Wrote: $out_free\n";
@@ -253,12 +227,11 @@ sub write_support_outputs {
     my $tree_path         = $arg{species_tree_path};
     my ($branch_type_ref, $duplicate_loser_ref) = read_branch_support_metadata($tree_path);
     my %branch_type_for = %{$branch_type_ref};
-
-    open(my $SUP, '>', $out_support_path) or die "[ERROR] Cannot write $out_support_path: $!\n";
-    print {$SUP} join(
+    my $tree_text = read_tree_text($tree_path);
+    my @support_lines = (join(
         "\t",
         qw(branch_id branch_type n_shared_genes n_fix_non_na n_free_non_na support_percent discordance_percent)
-    ), "\n";
+    ));
 
     my %support_value_for;
     for my $b (@{$branches_ref}) {
@@ -270,7 +243,7 @@ sub write_support_outputs {
 
         $support_value_for{$b} = sprintf('%.10f', $support);
 
-        print {$SUP} join(
+        push @support_lines, join(
             "\t",
             $b,
             (exists $branch_type_for{$b} ? $branch_type_for{$b} : 'NA'),
@@ -279,9 +252,8 @@ sub write_support_outputs {
             $n_free_non_na,
             sprintf('%.10f', $support),
             sprintf('%.10f', $discordance),
-        ), "\n";
+        );
     }
-    close $SUP;
 
     for my $loser (sort keys %{$duplicate_loser_ref}) {
         my $winner = $duplicate_loser_ref->{$loser};
@@ -289,7 +261,6 @@ sub write_support_outputs {
         $support_value_for{$loser} = $support_value_for{$winner};
     }
 
-    my $tree_text = read_tree_text($tree_path);
     $tree_text = standardize_support_tree($tree_text, \%support_value_for);
 
     my $tree_base = basename($tree_path);
@@ -303,9 +274,8 @@ sub write_support_outputs {
         $tree_base .= '.support_b.nwk';
     }
 
-    open(my $TREE_OUT, '>', $tree_base) or die "[ERROR] Cannot write $tree_base: $!\n";
-    print {$TREE_OUT} $tree_text;
-    close $TREE_OUT;
+    write_utf8_file($out_support_path, join("\n", @support_lines) . "\n");
+    write_utf8_file($tree_base, $tree_text);
 
     print STDERR "[INFO] Wrote: $out_support_path\n";
     print STDERR "[INFO] Wrote: $tree_base\n";
@@ -322,12 +292,10 @@ sub read_branch_support_metadata {
     my $map_path = derive_branch_map_path($tree_path);
     return ({}, {}) unless defined $map_path && -e $map_path;
 
-    open(my $MAP, '<', $map_path) or die "[ERROR] Cannot open branch map $map_path: $!\n";
     my %branch_type_for;
     my %duplicate_loser_of;
     my $line_no = 0;
-    while (my $line = <$MAP>) {
-        chomp $line;
+    for my $line (@{ read_utf8_lines($map_path) }) {
         next if $line =~ /^\s*$/;
         $line_no++;
         next if $line_no == 1; # header
@@ -341,7 +309,6 @@ sub read_branch_support_metadata {
             $duplicate_loser_of{$branch_id} = $1;
         }
     }
-    close $MAP;
 
     print STDERR "[INFO] Loaded branch types from $map_path\n";
     return (\%branch_type_for, \%duplicate_loser_of);
@@ -372,10 +339,7 @@ sub derive_branch_map_path {
 
 sub read_tree_text {
     my ($path) = @_;
-    open(my $IN, '<', $path) or die "[ERROR] Cannot open $path: $!\n";
-    local $/ = undef;
-    my $text = <$IN>;
-    close $IN;
+    my $text = read_utf8_file($path);
     die "[ERROR] Species tree file is empty: $path\n" unless defined $text && $text ne '';
     return $text;
 }
@@ -387,7 +351,7 @@ sub standardize_support_tree {
     $tree_text =~ s/^\s*[^\(]+(?=\()//;
 
     # Tips keep only the taxon name; the forSplit branch ids are removed.
-    $tree_text =~ s/([A-Za-z0-9_.-]+):B\d+/$1/g;
+    $tree_text =~ s/([^\s(),:;]+):B\d+/$1/g;
 
     # Internal branches are converted from forSplit labels like "):B305"
     # into standard Newick internal-node labels like ")95.000000".
@@ -481,8 +445,5 @@ sub normalize_gene_id_for_alias_check {
 
 sub is_numeric_branch_evidence {
     my ($value) = @_;
-    return 0 unless defined $value;
-    return 0 if $value =~ /^\s*$/;
-    return 0 if $value =~ /^NA/;
-    return $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+    return is_numeric_value($value);
 }

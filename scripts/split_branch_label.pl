@@ -21,6 +21,7 @@
 #   <label>_split_branch_label/*.split.txt
 #   <label>_split_branch_label/<label>.split_branch_label.errors.log
 #   <label>_split_branch_label/<label>.branch_patterns.txt
+#   <label>.primitive_state.tsv
 #
 # Usage:
 #   perl split_branch_label.pl -i <label>_splits -j species_tree.splits.txt -o <label>
@@ -30,40 +31,67 @@ use 5.010;
 use strict;
 use warnings;
 use Getopt::Std;
+use FindBin qw($RealBin);
 use File::Spec;
 use File::Path qw(make_path);
+use lib "$RealBin/../lib";
+use SplitAligner::Newick qw(
+    canonical_split
+    canonicalize_split
+    split_taxon_sets
+);
+use SplitAligner::CoordinateState qw(write_state_matrix);
+use SplitAligner::Provenance qw(read_axis_ledger);
+use SplitAligner::TextIO qw(
+    close_utf8_writer
+    configure_utf8_stdio
+    decode_argv_utf8
+    open_utf8_writer
+    print_utf8
+    read_utf8_lines
+    write_utf8_file
+);
+
+decode_argv_utf8();
+configure_utf8_stdio();
 
 my %opt;
-getopts('i:j:o:', \%opt);
+getopts('i:j:o:a:g:', \%opt);
 
 my $gene_splits_dir = $opt{i} // '';
 my $species_axis_file = $opt{j} // '';
 my $label = $opt{o} // '';
+my $primitive_axis_file = $opt{a} // '';
+my $gene_map_file = $opt{g} // '';
 
-if (!$gene_splits_dir || !$species_axis_file || !$label) {
-    die "Usage: $0 -i <label>_splits -j species_tree.splits.txt -o <label>\n";
+if (!$gene_splits_dir || !$species_axis_file || !$label || !$primitive_axis_file || !$gene_map_file) {
+    die "Usage: $0 -i <label>_splits -j species_tree.splits.txt -a <primitive_axis.tsv> -g <gene_id_map.tsv> -o <label>\n";
 }
 
 -d $gene_splits_dir or die "[ERROR] Cannot find input directory: $gene_splits_dir\n";
 -e $species_axis_file or die "[ERROR] Cannot read species split axis file: $species_axis_file\n";
+-e $primitive_axis_file or die "[ERROR] Cannot read primitive axis file: $primitive_axis_file\n";
+-e $gene_map_file or die "[ERROR] Cannot read gene identity map: $gene_map_file\n";
+
+my $axis = read_axis_ledger($primitive_axis_file);
+my @primitive_axis = map { $_->{branch_id} } @{$axis};
+my ($storage_to_gene, $gene_order) = read_gene_id_map($gene_map_file);
 
 my $out_dir = "${label}_split_branch_label";
 make_path($out_dir);
 
 my $error_log = File::Spec->catfile($out_dir, "${label}.split_branch_label.errors.log");
 my $pattern_out = File::Spec->catfile($out_dir, "${label}.branch_patterns.txt");
+my $state_out = "${label}.primitive_state.tsv";
 
-open(my $ERR, '>', $error_log) or die "[ERROR] Cannot write $error_log: $!\n";
+my $ERR = open_utf8_writer($error_log);
 
 # -------------------------------
 # Read species-tree split axis
 # -------------------------------
-open(my $AXIS, '<', $species_axis_file) or die "[ERROR] Cannot read $species_axis_file: $!\n";
-
 my (%branch_to_split, %split_to_branch, %terminal_to_branch, %is_terminal_branch);
 
-while (my $line = <$AXIS>) {
-    chomp $line;
+for my $line (@{ read_utf8_lines($species_axis_file) }) {
     next if $line eq '';
 
     my @fields = split(/\t/, $line);
@@ -74,7 +102,7 @@ while (my $line = <$AXIS>) {
 
     my $canonical_split = reorder_split($raw_split);
     if ($canonical_split eq 'Error') {
-        print {$ERR} "[ERROR] Bad split line in species axis: $line\n";
+        print_utf8($ERR, "[ERROR] Bad split line in species axis: $line\n");
         next;
     }
 
@@ -83,7 +111,7 @@ while (my $line = <$AXIS>) {
         my $winner = preferred_branch_id($current_branch, $branch_id);
         my $loser  = ($winner eq $current_branch) ? $branch_id : $current_branch;
 
-        print {$ERR} "[WARN] Duplicate canonical species split detected: $canonical_split\twinner=$winner\tloser=$loser\n";
+        print_utf8($ERR, "[WARN] Duplicate canonical species split detected: $canonical_split\twinner=$winner\tloser=$loser\n");
 
         if ($winner eq $current_branch) {
             next;
@@ -100,27 +128,27 @@ while (my $line = <$AXIS>) {
     $split_to_branch{$branch_id} = $canonical_split;
 
     # terminal split bookkeeping for missing-taxa pruning
-    my @parts = split(/\|\|/, $canonical_split);
-    if (@parts == 2) {
-        if ($parts[0] !~ /\.\./) {
-            $terminal_to_branch{$parts[0]} = $branch_id;
+    my ($left_taxa, $right_taxa) = split_taxon_sets($canonical_split);
+    if (@{$left_taxa} == 1) {
+            $terminal_to_branch{$left_taxa->[0]} = $branch_id;
             $is_terminal_branch{$branch_id} = 1;
-        } elsif ($parts[1] !~ /\.\./) {
-            $terminal_to_branch{$parts[1]} = $branch_id;
+    } elsif (@{$right_taxa} == 1) {
+            $terminal_to_branch{$right_taxa->[0]} = $branch_id;
             $is_terminal_branch{$branch_id} = 1;
-        }
     }
 }
-close $AXIS;
 
 die "[ERROR] species split axis seems empty: $species_axis_file\n" unless %branch_to_split;
+my %axis_branch = map { $_ => 1 } @primitive_axis;
+die "[ERROR] Species split axis and primitive ledger contain different retained branch IDs.\n"
+    unless keys(%axis_branch) == keys(%split_to_branch)
+        && !grep { !$split_to_branch{$_} } @primitive_axis;
 
-# Derive full species set string (..sp1..sp2..)
+# Derive the full species set from one complete split.
 my @axis_splits = sort keys %branch_to_split;
 my $first_split = $axis_splits[0];
-(my $tmp = $first_split) =~ s/\|\|/../;
-my @all_species = split(/\.\./, $tmp);
-my $species_universe = '..' . join('..', @all_species) . '..';
+my ($first_left, $first_right) = split_taxon_sets($first_split);
+my @all_species = sort(@{$first_left}, @{$first_right});
 
 # -------------------------------
 # Iterate over gene split files
@@ -130,18 +158,24 @@ my @split_files = sort grep { /\.split\.txt$/ && -f File::Spec->catfile($gene_sp
 closedir $DH;
 
 my %observed_branch_patterns;  # for summary output
+my %state_for_gene;
+my %seen_storage;
 
 for my $fname (@split_files) {
     my $in_path  = File::Spec->catfile($gene_splits_dir, $fname);
     my $out_path = File::Spec->catfile($out_dir, $fname);
 
-    open(my $IN,  '<', $in_path)  or die "[ERROR] Cannot read $in_path: $!\n";
-    open(my $OUT, '>', $out_path) or die "[ERROR] Cannot write $out_path: $!\n";
+    (my $storage_key = $fname) =~ s/\.split\.txt\z//;
+    die "[ERROR] Split file has no gene identity mapping: $fname\n"
+        unless exists $storage_to_gene->{$storage_key};
+    die "[ERROR] Duplicate split file for storage key '$storage_key'.\n"
+        if $seen_storage{$storage_key}++;
+    my $gene_id = $storage_to_gene->{$storage_key};
+    my $OUT = open_utf8_writer($out_path);
 
     my %gene_split_to_values;
 
-    while (my $line = <$IN>) {
-        chomp $line;
+    for my $line (@{ read_utf8_lines($in_path) }) {
         next if $line eq '';
         my @fields = split(/\t/, $line);
         next unless @fields >= 2;
@@ -151,7 +185,7 @@ for my $fname (@split_files) {
 
         my $canonical_split = reorder_split($raw_split);
         if ($canonical_split eq 'Error') {
-            print {$ERR} "[ERROR] Bad split in $fname: $line\n";
+            print_utf8($ERR, "[ERROR] Bad split in $fname: $line\n");
             next;
         }
 
@@ -160,19 +194,18 @@ for my $fname (@split_files) {
 
     my @gene_splits = sort keys %gene_split_to_values;
     if (!@gene_splits) {
-        print {$ERR} "[WARN] Empty gene split file: $fname\n";
-        close $IN;
-        close $OUT;
+        print_utf8($ERR, "[WARN] Empty gene split file: $fname\n");
+        close_utf8_writer($OUT, $out_path);
         next;
     }
 
-    # derive species present in this gene (from first split)
+    # Derive species present in this gene from one complete split.
     my $g0 = $gene_splits[0];
-    (my $g0tmp = $g0) =~ s/\|\|/../;
-    my @gene_species = split(/\.\./, $g0tmp);
-    my $gene_species_str = '..' . join('..', @gene_species) . '..';
+    my ($gene_left, $gene_right) = split_taxon_sets($g0);
+    my @gene_species = sort(@{$gene_left}, @{$gene_right});
 
-    my @missing_species = array_split($species_universe, $gene_species_str);
+    my @missing_species = array_split(\@all_species, \@gene_species);
+    my %state = map { $_ => 'U' } @primitive_axis;
 
     # Build projected species axis under missing taxa
     my %projected_branch_meta = map {
@@ -187,7 +220,10 @@ for my $fname (@split_files) {
         # Remove terminal branches that correspond to missing taxa
         for my $sp (@missing_species) {
             my $terminal_branch = $terminal_to_branch{$sp};
-            delete $projected_branch_meta{$terminal_branch} if defined $terminal_branch;
+            if (defined $terminal_branch) {
+                $state{$terminal_branch} = 'S';
+                delete $projected_branch_meta{$terminal_branch};
+            }
         }
 
         # Prune missing taxa from every split and classify each projected branch
@@ -199,6 +235,7 @@ for my $fname (@split_files) {
             $s = prune_taxa_from_split($s, \@missing_species);
             my ($observable, $fuse_ok) = classify_projected_split($s, $is_terminal_branch{$branch_id});
             if (!$fuse_ok) {
+                $state{$branch_id} = 'S';
                 delete $projected_branch_meta{$branch_id};
                 next;
             }
@@ -222,11 +259,11 @@ for my $fname (@split_files) {
                 push @{ $split_to_projected_branches{$proj_split} }, $branch_id;
             } else {
                 $miss++;
-                print {$ERR} "[MISS] $fname\t$branch_id\t$proj_split\n";
+                print_utf8($ERR, "[MISS] $fname\t$branch_id\t$proj_split\n");
             }
         }
 
-        print {$ERR} "[SUMMARY] $fname\thit=$hit\tmiss=$miss\tmissing_taxa=" . join(',', @missing_species) . "\n";
+        print_utf8($ERR, "[SUMMARY] $fname\thit=$hit\tmiss=$miss\tmissing_taxa=" . join(',', @missing_species) . "\n");
 
         for my $gene_split (sort keys %split_to_projected_branches) {
             my @members = @{ $split_to_projected_branches{$gene_split} };
@@ -241,11 +278,17 @@ for my $fname (@split_files) {
             # Suppress singleton endpoint-collapsed internal branches. They are
             # valid bookkeeping objects for fused-path construction, but they
             # must not survive as independently observed numeric branches.
+            if (@members >= 2) {
+                $state{$_} = 'F' for @members;
+            } elsif ($has_observable) {
+                $state{$members[0]} = 'D';
+            }
+
             next if @members == 1 && !$has_observable;
 
             my $branch_pattern = join('|', sort_branch_ids(@members));
             for my $val (@{ $gene_split_to_values{$gene_split} }) {
-                print {$OUT} "$gene_split\t$branch_pattern\t$val\n";
+                print_utf8($OUT, "$gene_split\t$branch_pattern\t$val\n");
                 $observed_branch_patterns{$branch_pattern} = 1;
             }
         }
@@ -255,8 +298,9 @@ for my $fname (@split_files) {
         for my $axis_split (sort keys %branch_to_split) {
             if (exists $gene_split_to_values{$axis_split}) {
                 my $branch_id = $branch_to_split{$axis_split};
+                $state{$branch_id} = 'D';
                 for my $val (@{ $gene_split_to_values{$axis_split} }) {
-                    print {$OUT} "$axis_split\t$branch_id\t$val\n";
+                    print_utf8($OUT, "$axis_split\t$branch_id\t$val\n");
                     $observed_branch_patterns{$branch_id} = 1;
                 }
             } else {
@@ -265,73 +309,57 @@ for my $fname (@split_files) {
         }
     }
 
-    close $IN;
-    close $OUT;
+    $state_for_gene{$gene_id} = [ map { $state{$_} } @primitive_axis ];
+    close_utf8_writer($OUT, $out_path);
 }
 
 # Write branch pattern summary
-open(my $PAT, '>', $pattern_out) or die "[ERROR] Cannot write $pattern_out: $!\n";
-print {$PAT} "$_\n" for sort keys %observed_branch_patterns;
-close $PAT;
+write_utf8_file($pattern_out, join('', map { "$_\n" } sort keys %observed_branch_patterns));
+close_utf8_writer($ERR, $error_log);
 
-close $ERR;
+for my $storage_key (keys %{$storage_to_gene}) {
+    die "[ERROR] Missing split file for gene '$storage_to_gene->{$storage_key}' (storage key $storage_key).\n"
+        unless $seen_storage{$storage_key};
+}
+my @state_rows = map {
+    my $gene_id = $_;
+    die "[ERROR] Missing coordinate state row for gene '$gene_id'.\n"
+        unless exists $state_for_gene{$gene_id};
+    { gene_id => $gene_id, states => $state_for_gene{$gene_id} }
+} @{$gene_order};
+write_state_matrix($state_out, \@primitive_axis, \@state_rows);
 
 # -------------------------------
 # Utilities
 # -------------------------------
 sub array_split {
     my ($universe, $subset) = @_;
-    my @universe_species = split(/\.\./, $universe);
-    my @missing;
-    for my $sp (@universe_species) {
-        next if $sp eq '';
-        if ($subset !~ /\.\Q$sp\E\./) {
-            push @missing, $sp;
-        }
-    }
-    return @missing;
+    my %present = map { $_ => 1 } @{$subset};
+    return grep { !$present{$_} } @{$universe};
 }
 
 sub reorder_split {
     my ($split) = @_;
-    $split =~ s/^\.\.//;
-    $split =~ s/\.\.$//;
-
-    my @parts = split(/\|\|/, $split);
-    if (@parts != 2) {
-        return 'Error';
-    }
-
-    my @left  = sort split(/\.\./, $parts[0]);
-    my @right = sort split(/\.\./, $parts[1]);
-
-    my $left  = join('..', grep { $_ ne '' } @left);
-    my $right = join('..', grep { $_ ne '' } @right);
-
-    return ($left le $right) ? "$left||$right" : "$right||$left";
+    my $canonical = eval { canonicalize_split($split) };
+    return $@ ? 'Error' : $canonical;
 }
 
 sub prune_taxa_from_split {
     my ($split, $missing_ref) = @_;
     my %missing = map { $_ => 1 } @{$missing_ref};
 
-    my @parts = split(/\|\|/, $split, -1);
-    return $split unless @parts == 2;
-
-    my @left = grep { $_ ne '' && !$missing{$_} } split(/\.\./, $parts[0], -1);
-    my @right = grep { $_ ne '' && !$missing{$_} } split(/\.\./, $parts[1], -1);
-
-    return join('||', join('..', @left), join('..', @right));
+    my ($left_taxa, $right_taxa) = split_taxon_sets($split);
+    my @left = grep { !$missing{$_} } @{$left_taxa};
+    my @right = grep { !$missing{$_} } @{$right_taxa};
+    return canonical_split(\@left, \@right);
 }
 
 sub classify_projected_split {
     my ($split, $is_terminal) = @_;
 
-    my @parts = split(/\|\|/, $split, -1);
-    return (0, 0) unless @parts == 2;
-
-    my @left  = grep { $_ ne '' } split(/\.\./, $parts[0], -1);
-    my @right = grep { $_ ne '' } split(/\.\./, $parts[1], -1);
+    my ($left_taxa, $right_taxa) = split_taxon_sets($split);
+    my @left  = @{$left_taxa};
+    my @right = @{$right_taxa};
 
     # Structural absence: one projected side is empty.
     return (0, 0) if !@left || !@right;
@@ -366,4 +394,30 @@ sub preferred_branch_id {
     return $left  if defined $ln && defined $rn && $ln <= $rn;
     return $right if defined $ln && defined $rn;
     return defined $left ? $left : $right;
+}
+
+sub read_gene_id_map {
+    my ($path) = @_;
+    my $lines = read_utf8_lines($path);
+    die "[ERROR] Gene identity map is empty: $path\n" unless @{$lines};
+    die "[ERROR] Unexpected gene identity map header in $path.\n"
+        unless $lines->[0] eq "storage_key\tgene_id\tinput_line";
+
+    my (%storage_to_gene, %seen_gene, @genes);
+    for my $index (1 .. $#{$lines}) {
+        my $line = $lines->[$index];
+        next if $line eq '';
+        my ($storage_key, $gene_id, $input_line) = split(/\t/, $line, -1);
+        die "[ERROR][$path line " . ($index + 1) . "] Malformed gene identity row.\n"
+            unless defined $input_line && defined $storage_key && $storage_key ne ''
+                && defined $gene_id && $gene_id ne '';
+        die "[ERROR][$path line " . ($index + 1) . "] Duplicate storage key '$storage_key'.\n"
+            if exists $storage_to_gene{$storage_key};
+        die "[ERROR][$path line " . ($index + 1) . "] Duplicate gene ID '$gene_id'.\n"
+            if $seen_gene{$gene_id}++;
+        $storage_to_gene{$storage_key} = $gene_id;
+        push @genes, $gene_id;
+    }
+    die "[ERROR] Gene identity map has no records: $path\n" unless @genes;
+    return (\%storage_to_gene, \@genes);
 }

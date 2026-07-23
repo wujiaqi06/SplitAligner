@@ -16,7 +16,9 @@ SplitAligner explicitly distinguishes biologically meaningful forms of missingne
 
 This repository contains the SplitAligner source code, example datasets, and documentation needed to reproduce the core branch-mapping workflow.
 
-Current release: `v1.2.0`
+Frozen base release: `v1.2.0`
+
+Phase 3 repair candidate: based on frozen commit `4337e2cb62ac24238246893e85e3d2a5a51c8a7a`; external certification pending.
 
 ---
 
@@ -76,7 +78,7 @@ In practice, SplitAligner asks a simple question for each gene and each species-
 
 ## Definition Summary
 
-In finalized SplitAligner matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when no fixed-side numeric primitive evidence is available.
+In finalized SplitAligner matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when its explicit coordinate state is nonstructural but the required numeric evidence is unavailable.
 
 For missing cells in the final matrices, these `NA_*` labels are explanatory categories rather than generic absence codes:
 
@@ -99,11 +101,13 @@ This design allows absence states to be analyzed explicitly instead of being col
 
 ---
 
-## Determinism
+## Determinism and Coordinate Identity
 
-All gene-tree splits are mapped onto a fixed species-tree branch coordinate system defined by the input species-tree backbone.
+All gene-tree splits are mapped onto the ordered primitive-coordinate ledger generated from the input species tree. Each ledger row binds a textual `B` alias to one canonical unrooted split, and the SHA-256 digest of that ordered mapping is recorded in the matrix run manifest.
 
-For a given species-tree backbone, branch indexing and branch-matrix construction are deterministic and reproducible: the same species-tree split axis is used for every gene, each gene tree is evaluated by projection onto that fixed coordinate system, and the final matrix is independent of gene-tree processing order.
+Canonical splits plus their ordered ledger are the authoritative coordinate identity. Textual `B` IDs are serialization-local aliases: equivalent species trees written with different child orders can assign different `B` aliases to the same biological split. Matrix construction is deterministic for the same parsed species-tree serialization and is independent of gene-record processing order, but matrices may be finalized together only when their exact ordered `B`-to-split ledgers match.
+
+Canonical split keys use a versioned, injective hybrid encoding. Legacy-safe labels retain the historical readable form. Labels containing `..` or `|`, or beginning or ending with `.`, use an `HX1:` hexadecimal byte encoding because their membership boundaries are not unambiguous under the legacy `..` separator. A single internal period, as in `NC_045512.2`, remains legacy-safe. This prevents distinct taxon sets or graph edges from sharing one textual key without changing established safe-label matrices or `B` aliases.
 
 When rooted species trees induce duplicate canonical unrooted splits, SplitAligner collapses them to a deterministic representative chosen by the smaller numeric `B` ID. The corresponding `branch_map` records duplicate winners and losers, and duplicate rooted display branches in `support_b.nwk` inherit the support of their unrooted representative rather than being written as false zero-support branches.
 
@@ -175,6 +179,14 @@ SplitAligner/
     confirm_na_structure.pl
     classify_fix_missingness.pl
 
+  lib/SplitAligner/
+    Newick.pm              shared structural Newick parser
+    Provenance.pm          axis-ledger and manifest utilities
+    TextIO.pm              strict UTF-8 text and filesystem-path boundaries
+    CoordinateState.pm     primitive S/D/F/U state schema and validation
+    IOSafety.pm            namespace, immutability, and publication-parent device checks
+    OutputOwnership.pm     output inventories and ownership-gated publication
+
   examples/
     302mammal/
       input/
@@ -182,11 +194,13 @@ SplitAligner/
         free_tree.examples.nwk
         fix_tree.examples.nwk
       expected/
+      run/                   generated at runtime; not bundled
     preprint_302mammal/
       input/
         speciesTree302.nwk
         free.2275genes.nwk
         fix.2275genes.nwk
+      run/                   generated at runtime; not bundled
     run.sh
 
   assets/
@@ -219,6 +233,18 @@ SplitAligner/
     faq.md
 
   tests/
+    phase3_contract_regression/
+    phase3_codec_closure_regression/
+    phase3_metamorphic_regression/
+    phase3_narrow_correction_regression/
+    recert_blocker_regression/
+    recert_utf8_path_regression/
+    recert005_io_alias_regression/
+    recert006_output_ownership_regression/
+    recert007_publication_device_regression/
+    recert008_publication_parent_device_regression/
+    recert009_posix_input_resolution_regression/
+    recert010_strict_posix_input_lookup_regression/
     confirm_na_structure_regression/
     extract_na_fuse_regression/
     root_duplicate_unrooted_axis_regression/
@@ -236,8 +262,12 @@ SplitAligner/
   - `File::Basename`
   - `File::Path`
   - `File::Spec`
+  - `File::Temp`
+  - `File::Copy`
   - `FindBin`
   - `Cwd`
+  - `Digest::SHA`
+  - `JSON::PP`
 
 No external R or non-core Perl dependencies are required for the main workflow.
 
@@ -307,7 +337,26 @@ bash examples/run.sh toy
 bash examples/run.sh preprint
 ```
 
-The `toy` run is intended for fast workflow checks. The `preprint` run reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree.
+The `toy` run is intended for fast workflow checks. It writes only to `examples/302mammal/run/`; bundled files under `input/` and `expected/` remain immutable. Before SplitAligner starts, the runner verifies that `run/` is a real directory at the exact physical child path of the example root and rejects symbolic links, non-directories, or overlap with immutable fixture directories. A repository checkout reached through a symbolic-link ancestor remains supported. A second invocation safely replaces the first run through the ownership manifests created in that workspace. The `preprint` run applies the same workspace check, writes only to `examples/preprint_302mammal/run/`, and reproduces the full analysis-scale pipeline, including branch-wise `Support` and the annotated species tree.
+
+To start again from an empty workspace, first archive the current workspace
+without deleting any of its contents:
+
+```bash
+bash examples/archive_run.sh toy
+bash examples/archive_run.sh preprint
+```
+
+The selected `run/` directory is atomically renamed to a unique sibling such
+as `run.saved.20260721T120000Z.12345`; files are never recursively deleted.
+The helper rejects symbolic links, non-directories, mounted or cross-device
+workspaces, and any workspace whose physical identity changes during the
+operation. It prints the archive path after success. Inspect the complete
+archive before considering any manual deletion, especially because unrelated
+user files may have been intentionally preserved there. The next example run
+creates a fresh `run/` workspace. Do not remove or modify the bundled `input/`
+or `expected/` directories. See `examples/README.md` for the layout and
+ownership rules.
 
 The example workflow performs:
 
@@ -318,19 +367,23 @@ The example workflow performs:
 
 Expected reference outputs are provided for the toy example in `examples/302mammal/expected/`.
 
-Minimal command-line usage from the repository root:
+Equivalent minimal command-line usage from the repository root, using the same dedicated toy workspace:
 
 ```bash
-perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/free_tree.examples.nwk --label free
-perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/fix_tree.examples.nwk --label fix
-perl SplitAligner.pl --mode finalize --free free.matrix_with_fuse.txt --fix fix.matrix_with_fuse.txt --final_label final --species_tree species_tree.forSplit.nwk
+mkdir -p examples/302mammal/run
+cd examples/302mammal/run
+perl ../../../SplitAligner.pl --mode matrix --species ../input/speciesTree302.nwk --gene ../input/free_tree.examples.nwk --label free
+perl ../../../SplitAligner.pl --mode matrix --species ../input/speciesTree302.nwk --gene ../input/fix_tree.examples.nwk --label fix
+perl ../../../SplitAligner.pl --mode finalize --free free.matrix_with_fuse.txt --fix fix.matrix_with_fuse.txt --final_label final --species_tree species_tree.forSplit.nwk
 ```
 
 Fix-only example:
 
 ```bash
-perl SplitAligner.pl --mode matrix --species examples/302mammal/input/speciesTree302.nwk --gene examples/302mammal/input/fix_tree.examples.nwk --label fix
-perl SplitAligner.pl --mode finalize_fix --fix fix.matrix_with_fuse.txt --final_label final_fix
+mkdir -p examples/302mammal/run
+cd examples/302mammal/run
+perl ../../../SplitAligner.pl --mode matrix --species ../input/speciesTree302.nwk --gene ../input/fix_tree.examples.nwk --label fix
+perl ../../../SplitAligner.pl --mode finalize_fix --fix fix.matrix_with_fuse.txt --final_label final_fix
 ```
 
 ---
@@ -363,21 +416,24 @@ SplitAligner runs in two major stages.
 3. Convert each gene tree into split form
 4. Project the species-tree split space after pruning taxa absent from each gene
 5. Detect exact and fused branch correspondences
-6. Generate gene-by-branch matrices
+6. Generate gene-by-branch matrices from the complete retained primitive ledger
+7. Write a label-specific primitive ledger, gene identity map, explicit primitive-state sidecar, and run manifest
 
 ### Stage 2: `finalize`
 
 1. Mark primitive-branch `NA` cells that are explained by numeric fused-branch signal as `NA_fuse`
 2. Compare fixed-topology and free-topology matrices on shared genes
-3. Classify remaining missing cells: shared generic `NA` in both fixed and free matrices becomes `NA_struct`, whereas free-side `NA` becomes `NA_topo` only when numeric fixed-side primitive evidence exists
+3. Classify each side from its explicit coordinate state: generic `NA` becomes `NA_struct` only for state `S`, while free-side `NA` becomes `NA_topo` only for free state `U` paired with finite numeric fixed-side primitive evidence in state `D`
 4. Optionally compute branch-wise `Support` and write an annotated species tree
 
-Residual generic `NA` is retained when topology-induced absence cannot be diagnosed from numeric fixed-side evidence.
+Residual generic `NA` is retained for nonstructural `D`, `F`, or `U` states when the evidence required for a more specific classification is unavailable.
+
+Before classification begins, `finalize` locates the FREE and FIX run manifests and requires their complete ordered canonical ledgers to match. A missing manifest, matrix-hash mismatch, ledger mismatch, or mismatched Support tree is fatal before final outputs are created.
 
 ### Stage 3: `finalize_fix`
 
 1. Mark primitive-branch `NA` cells that are explained by numeric fused-branch signal as `NA_fuse`
-2. In fix-only analyses, rewrite all remaining `NA` cells as `NA_struct`
+2. In fix-only analyses, classify a generic `NA` as `NA_struct` only when its explicit primitive state is `S`
 3. Produce a fix-only classified matrix without invoking `NA_topo`
 
 ---
@@ -393,6 +449,8 @@ Required arguments:
 - `--species`: species tree in Newick format
 - `--gene`: gene-tree file in SplitAligner line-based format
 - `--label`: output label or prefix, for example `free` or `fix`
+- `species_tree` is reserved and cannot be used as a matrix `--label`, because it names the common species-tree artifact namespace
+- `--force`: optional transactional replacement of an intact, ownership-verified prior run
 
 Example: free-topology gene trees
 
@@ -422,6 +480,18 @@ Main outputs:
 - `<label>_split_branch_label/`
 - `<label>.matrix_no_fuse.txt`
 - `<label>.matrix_with_fuse.txt`
+- `<label>.primitive_axis.tsv`
+- `<label>.gene_id_map.tsv`
+- `<label>.primitive_state.tsv`
+- `<label>.run_manifest.json`
+
+Existing label-owned outputs cause a nonzero error by default. With `--force`, SplitAligner constructs and validates the complete replacement in a temporary workspace before publishing it; stale per-gene files cannot survive, and a failed replacement leaves the previous successful run intact.
+
+Before computation, SplitAligner registers every input and every possible publication destination for the selected mode. Inputs and destinations must be disjoint by canonical path, resolved path, existing file identity, and output-directory containment. A destination name alone does not establish ownership. Each successful run binds its files and complete recursive directory trees to an ownership inventory in the run or finalization manifest. `--force` may replace only an intact object covered by that exact prior inventory; missing, legacy, malformed, altered, hard-linked, type-swapped, or extra-content outputs fail closed and must be moved or removed manually. Input bytes are checked again immediately before publication, and a changed input aborts the transaction without replacing prior successful outputs.
+
+SplitAligner v1.x supports one publication filesystem device per invocation. The resolved current working directory owns the work and rollback transaction, so every publication destination's resolved publication parent must be on that same filesystem device. The existing destination object's inode device is retained only for namespace and ownership checks; it is not the publication-device authority. In `finalize` and `finalize_fix`, the publication parents include the matrix directories that receive each `.na_fuse` output. Therefore the matrix directories and finalization working directory must be on the same device; otherwise SplitAligner stops during preflight, before ownership inspection, workdir creation, or helper execution. Run finalization on the matrix filesystem or copy the complete matrix run into the transaction filesystem. Read-only inputs may reside on another device, and `--force` cannot override this restriction. Publication-parent paths and devices are checked again immediately before publication.
+
+Common `species_tree.*` artifacts and deterministic `.na_fuse` derivatives are shared outputs. Existing copies are reused without mutation only when their generated fingerprints are identical. A differing shared output is never replaced by `--force`, which prevents one label or finalization from invalidating another run that depends on the same artifact.
 
 ### `--mode finalize`
 
@@ -436,6 +506,8 @@ Required arguments:
 Optional argument:
 
 - `--species_tree`: `species_tree.forSplit.nwk` for branch-wise `Support` calculation and tree annotation
+- `--free_manifest` / `--fix_manifest`: explicit run manifests when they cannot be inferred beside the matrix files
+- `--force`: transactionally replace intact outputs covered by the matching prior finalization ownership inventory
 
 Example:
 
@@ -453,10 +525,13 @@ Main outputs:
 - `fix.matrix_with_fuse.na_fuse.txt`
 - `<final_label>.fix.na_classified.txt`
 - `<final_label>.free.na_classified.txt`
+- `<final_label>.finalize_manifest.json`
 - `<final_label>.support_b.txt` if `--species_tree` is provided
 - `<species_prefix>.support_b.nwk` if `--species_tree` is provided
 
 The final classification step is defined only for genes shared between the fixed-topology and free-topology inputs. If no shared genes are found, SplitAligner stops with an error.
+
+`finalize` has no implicit legacy/header-only fallback. By default it locates `<label>.run_manifest.json` beside each `<label>.matrix_with_fuse.txt`, requires the v3 manifest and its bound primitive-state sidecar, verifies matrix and state hashes, validates row/column identity, and compares the exact ordered canonical coordinate mapping. Matching textual headers such as `B1...Bn` are not sufficient when those aliases bind to different splits. Earlier v2 matrix runs must be regenerated before finalization.
 
 When `--species_tree` is provided, SplitAligner also computes a branch-wise concordance score, `Support(b)`, on the species-tree backbone. In the current implementation, `Support(b)` is defined on genes shared between the fixed-topology and free-topology inputs as:
 
@@ -473,6 +548,11 @@ Required arguments:
 - `--fix`: fixed-topology `matrix_with_fuse` file
 - `--final_label`: output prefix for the classified matrix
 
+Optional arguments:
+
+- `--fix_manifest`: explicit fixed-topology run manifest when it cannot be inferred beside the matrix
+- `--force`: transactionally replace existing outputs
+
 Example:
 
 ```bash
@@ -485,12 +565,42 @@ Main outputs:
 
 - `fix.matrix_with_fuse.na_fuse.txt`
 - `<final_label>.fix.na_classified.txt`
+- `<final_label>.finalize_manifest.json`
 
-In `finalize_fix`, SplitAligner first marks `NA_fuse` from numeric fused-branch signal and then interprets all remaining `NA` cells as `NA_struct`. This mode does not define or emit `NA_topo`.
+In `finalize_fix`, SplitAligner first marks `NA_fuse` only for state `F` with numeric fused-branch signal. It then classifies only state-`S` generic missing cells as `NA_struct`; nonnumeric `D`, `F`, and `U` cells remain residual `NA`. This mode does not define or emit `NA_topo`.
 
 ---
 
 ## Input Formats
+
+All supported scientific text inputs are decoded as strict UTF-8 without a
+byte-order mark (BOM). SplitAligner writes UTF-8/LF text without a BOM and
+rejects malformed UTF-8 before publishing matrix or finalized outputs. Gene
+identifiers and taxon labels are preserved as decoded Unicode text. Supported
+filesystem paths are likewise treated as strict UTF-8: command-line paths and
+paths returned by the operating system are decoded once before path
+composition, while file-content SHA-256 values continue to be calculated over
+raw bytes. SplitAligner does not apply Unicode normalization.
+
+Existing inputs undergo strict operating-system lookup directly from the exact
+decoded path supplied by the user or discovery chain. SplitAligner first opens
+that pathname without lexical preprocessing, requires the opened object to be a
+regular file, and records its handle-derived SHA-256, size, device, and inode.
+Only after that direct lookup succeeds is the original pathname resolved for
+parser compatibility; the resolved path must identify the same opened object.
+Consequently, invalid forms such as a regular-file component followed by `/..`,
+`/.`, or a trailing slash fail closed even if a canonicalization routine could
+produce an apparent target. Valid directory symlinks followed by `/..` retain
+normal POSIX semantics. Immediately before publication, the exact original path
+is opened and identity-bound again so that a removed or retargeted symlink chain
+fails closed. Generated destinations use a separate lexical construction path
+because the destination object may not yet exist.
+
+The same decoded-path boundary is used by the I/O namespace guard. Path
+ancestry is compared by complete components rather than raw string prefixes,
+and symlink or hardlink aliases to declared inputs are rejected. These checks
+also apply to manifests, state sidecars, and Support-tree inputs discovered
+during `finalize` or `finalize_fix` preflight.
 
 ### Species tree
 
@@ -499,6 +609,9 @@ In `finalize_fix`, SplitAligner first marks `NA_fuse` from numeric fused-branch 
 - Species labels must be consistent with those used in the gene trees
 - Branch lengths and internal node annotations are allowed
 - Internal annotations are ignored during split-based branch mapping
+- Terminal labels may be numeric, for example `1`, `2`, `3`, and `4`
+- Duplicate terminal labels are rejected
+- Quoted labels and bracket comments are currently rejected explicitly rather than silently reinterpreted
 
 Accepted examples:
 
@@ -521,6 +634,10 @@ Accepted examples:
 - Species labels must match the species-tree naming convention
 - Branch lengths and node support annotations are allowed
 - Internal annotations are ignored during split-based mapping
+- Gene identifiers are preserved exactly; duplicate logical IDs are rejected before outputs are created
+- Every gene taxon must occur in the species tree, and duplicate taxa within a gene tree are rejected
+- Each non-empty record must contain exactly one complete tree; empty files, unbalanced trees, extra trees, and trailing content are fatal
+- Finite branch lengths accept signed integer, decimal, and scientific notation, including `1`, `1.0`, `1.`, `.5`, `-0.1`, and `1e-5`
 
 Example:
 
@@ -544,6 +661,8 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
   - canonical species-tree split definitions
 - `species_tree.branch_map.txt`
   - mapping between branch identifiers and species-tree subtrees
+- `species_tree.primitive_axis.tsv`
+  - complete retained primitive ledger for the current species-tree serialization
 - `<label>_splits/`
   - per-gene split representations
 - `<label>_split_branch_label/`
@@ -552,6 +671,12 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
   - primitive-branch matrix only
 - `<label>.matrix_with_fuse.txt`
   - primitive branches plus fused-branch columns
+- `<label>.primitive_axis.tsv`
+  - label-specific ordered `B`-alias to canonical-split ledger
+- `<label>.gene_id_map.tsv`
+  - injective per-record storage key mapped back to the exact original gene identifier
+- `<label>.run_manifest.json`
+  - machine-readable provenance including input hashes, gene-record count, ordered coordinate mapping, axis hash, matrix hashes, and the complete output ownership inventory
 
 ### Outputs from `finalize`
 

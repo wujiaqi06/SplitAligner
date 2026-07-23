@@ -9,6 +9,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 perl "$ROOT_DIR/scripts/confirm_na_structure.pl" \
   --fix "$TEST_DIR/fix.matrix_with_fuse.txt" \
   --free "$TEST_DIR/free.matrix_with_fuse.txt" \
+  --fix_state "$TEST_DIR/fix.primitive_state.tsv" \
+  --free_state "$TEST_DIR/free.primitive_state.tsv" \
   -o "$TMP_DIR/out" >/dev/null 2>&1
 
 diff -u "$TEST_DIR/expected.fix.na_classified.txt" "$TMP_DIR/out.fix.na_classified.txt"

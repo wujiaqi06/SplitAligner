@@ -30,16 +30,33 @@ use strict;
 use warnings;
 use Getopt::Long;
 use File::Basename;
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib";
+use SplitAligner::Newick qw(is_numeric_value);
+use SplitAligner::CoordinateState qw(
+    read_matrix_table
+    read_state_matrix
+    validate_state_for_matrix
+);
+use SplitAligner::TextIO qw(
+    configure_utf8_stdio
+    decode_argv_utf8
+    write_utf8_file
+);
 
-my ($input_matrix, $output_matrix);
+decode_argv_utf8();
+configure_utf8_stdio();
+
+my ($input_matrix, $output_matrix, $state_matrix);
 
 GetOptions(
     'i|input=s'  => \$input_matrix,
     'o|output=s' => \$output_matrix,
+    's|state=s'  => \$state_matrix,
 ) or die "[ERROR] Invalid command line arguments.\n";
 
-die "Usage: $0 -i <matrix_with_fuse.txt> [-o <output.txt>]\n"
-    unless defined $input_matrix;
+die "Usage: $0 -i <matrix_with_fuse.txt> --state <primitive_state.tsv> [-o <output.txt>]\n"
+    unless defined $input_matrix && defined $state_matrix;
 
 # Default output name: insert ".na_fuse" before final ".txt", otherwise append.
 if (!defined $output_matrix) {
@@ -50,81 +67,53 @@ if (!defined $output_matrix) {
     }
 }
 
-open(my $IN,  '<', $input_matrix)  or die "[ERROR] Cannot open $input_matrix: $!\n";
-open(my $OUT, '>', $output_matrix) or die "[ERROR] Cannot write $output_matrix: $!\n";
+my $matrix = read_matrix_table($input_matrix);
+my $state = read_state_matrix($state_matrix);
+validate_state_for_matrix(
+    state  => $state,
+    matrix => $matrix,
+    axis   => $matrix->{primitive},
+    role   => 'NA_fuse input',
+);
 
-my (@header_cols, @primitive_branches, @fused_branches);
+my @primitive_branches = @{$matrix->{primitive}};
+my @fused_branches = grep { /\|/ } @{$matrix->{branches}};
+my %matrix_index = map { $matrix->{branches}[$_] => $_ } 0 .. $#{$matrix->{branches}};
+my %state_index = map { $state->{axis}[$_] => $_ } 0 .. $#{$state->{axis}};
+my @output = (join("\t", 'gene', @primitive_branches));
 
-my $row_no = 0;
-while (my $line = <$IN>) {
-    chomp $line;
-    $row_no++;
-    my @f = split(/\t/, $line);
-
-    # Header
-    if ($row_no == 1) {
-        @header_cols = @f;
-
-        # Identify primitive vs fused branches.
-        for my $col (@header_cols[1 .. $#header_cols]) {
-            if ($col =~ /^B\d+(?:\|B\d+)+$/) {
-                push @fused_branches, $col;
-            } elsif ($col =~ /^B\d+$/) {
-                push @primitive_branches, $col;
-            }
-        }
-
-        # Write header: keep row ID column + primitive branches only
-        print {$OUT} $header_cols[0];
-        for my $b (@primitive_branches) {
-            print {$OUT} "\t$b";
-        }
-        print {$OUT} "\n";
-        next;
-    }
-
-    # Data row
-    my $gene_id = $f[0];
-
-    # Map column -> value for this row
-    my %val_for;
-    for my $i (1 .. $#header_cols) {
-        $val_for{$header_cols[$i]} = $f[$i];
-    }
+for my $gene_id (@{$matrix->{genes}}) {
+    my @values = @{$matrix->{rows}{$gene_id}};
+    my @states = @{$state->{rows}{$gene_id}};
 
     # If a fused branch has a numeric signal, mark any NA primitive component as NA_fuse
     for my $fb (@fused_branches) {
-        my $fb_val = $val_for{$fb};
+        my $fb_val = $values[ $matrix_index{$fb} ];
 
         next unless is_numeric_branch_value($fb_val);
 
         my @parts = split(/\|/, $fb);
         for my $p (@parts) {
-            next unless exists $val_for{$p};
-            if (defined $val_for{$p} && $val_for{$p} =~ /^NA/) {
-                $val_for{$p} = 'NA_fuse';
+            die "[ERROR][gene $gene_id] Fused coordinate '$fb' contains unknown primitive '$p'.\n"
+                unless exists $matrix_index{$p} && exists $state_index{$p};
+            my $value_index = $matrix_index{$p};
+            next unless $values[$value_index] eq 'NA';
+            my $code = $states[ $state_index{$p} ];
+            die "[ERROR][gene $gene_id branch $p] Numeric fused evidence is incompatible with state '$code'.\n"
+                unless $code eq 'F';
+            $values[$value_index] = 'NA_fuse';
             }
-        }
     }
 
-    # Write primitive-only output row
-    print {$OUT} $gene_id;
-    for my $b (@primitive_branches) {
-        my $v = exists $val_for{$b} ? $val_for{$b} : 'NA';
-        print {$OUT} "\t$v";
-    }
-    print {$OUT} "\n";
+    my @primitive_values = map { $values[ $matrix_index{$_} ] } @primitive_branches;
+    push @output, join("\t", $gene_id, @primitive_values);
 }
 
-close $IN;
-close $OUT;
+write_utf8_file($output_matrix, join("\n", @output) . "\n");
 
 print STDERR "[INFO] Wrote: $output_matrix\n";
 
 sub is_numeric_branch_value {
     my ($value) = @_;
-    return 0 unless defined $value;
-    return 0 if $value =~ /^\s*$/;
-    return 0 if $value =~ /^NA/;
-    return $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+    return is_numeric_value($value);
 }

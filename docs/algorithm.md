@@ -22,7 +22,9 @@ For each gene tree:
 3. projected splits are compared with the observed splits in the gene tree,
 4. exact and fused branch correspondences are recorded.
 
-Thus, branch identity is not defined by node order or graphical position, but by its split representation after projection.
+Thus, biological branch identity is defined by canonical split representation rather than graphical position. The textual `B` alias is bound to one canonical split by an ordered run-specific ledger; the alias alone is not authoritative across differently serialized species trees.
+
+Canonical split keys are injective over the supported taxon-label grammar. Legacy-safe labels retain the historical readable `taxon..taxon||taxon..taxon` form. If any label contains `..` or `|`, or begins or ends with `.`, SplitAligner instead serializes both taxon sets with the versioned `HX1:` hexadecimal byte encoding. These cases are structured because the legacy `..` separator would not preserve their membership boundaries. A single internal period remains legacy-safe. The encoded sides are sorted canonically, so equivalent rooted or child-order representations retain the same unrooted key without allowing distinct labels or taxon sets to collide.
 
 ---
 
@@ -70,17 +72,19 @@ The SplitAligner workflow consists of the following steps.
 
 ### Step 1. Label the species tree
 
-The species tree is relabeled so that each branch can be tracked explicitly in downstream processing.
+The species tree is parsed structurally and relabeled so that each branch can be tracked explicitly in downstream processing. Terminal branches receive `B` aliases in species-tree traversal order, followed by non-root internal branches in postorder, preserving the historical output convention.
 
 ### Step 2. Convert species-tree branches to splits
 
 Each species-tree branch is converted into a canonicalized unrooted edge split.
 
-This defines the reference branch coordinate system.
+Duplicate rooted edges that induce the same canonical unrooted split are collapsed to the lower numeric `B` representative. The retained coordinates are written as an ordered `B`-alias to canonical-split ledger. This ledger, rather than an observed maximum `B` value, defines the complete primitive matrix axis.
 
 ### Step 3. Convert gene trees to splits
 
-Each gene tree is also converted into split form so that comparison is performed in the same representation.
+Each gene tree is parsed by the same structural Newick parser and converted into split form so that comparison is performed in the same representation. Complete-file preflight rejects duplicate gene IDs, malformed records, duplicate taxa, and taxa outside the species-tree universe before final outputs are created.
+
+For a degree-2 root, the two rooted half-edges represent one unrooted edge. Their lengths are summed only when both components are finite numeric evidence; if either component lacks a length, the unrooted edge value is `NA`.
 
 ### Step 4. Project the species-tree split space
 
@@ -99,15 +103,17 @@ Possible outcomes include:
 - structural absence,
 - topological discordance.
 
-### Step 6. Generate branch matrices
+### Step 6. Generate branch matrices and coordinate states
 
-The reconciled mappings are summarized as gene-by-branch matrices for downstream analysis.
+The reconciled mappings are summarized as gene-by-branch matrices for downstream analysis. Every retained primitive coordinate from the ordered species ledger is emitted, including coordinates that are not mapped by any gene in the current batch.
+
+In parallel, SplitAligner writes one explicit state code for every gene by primitive-coordinate cell: `S` (structurally absent), `D` (directly mapped), `F` (fused mapped), or `U` (projected but unmapped). These states are derived from projection and split correspondence without inspecting branch-length values. Consequently, removing or respelling branch lengths without changing topology or taxon content does not change the state sidecar.
 
 These matrices can optionally include fused-branch completion.
 
 ### Step 7. Compare fixed-tree and free-tree matrices
 
-In the final stage, fixed-topology and free-topology outputs are compared to classify missing values into biologically meaningful categories.
+In the final stage, fixed-topology and free-topology outputs are compared to classify missing values into biologically meaningful categories. Classification uses each side's explicit state rather than inferring structural absence from numeric missingness. Before cell comparison, their v3 run manifests must contain the same complete ordered `B`-to-canonical-split mapping, matching matrix hashes, and valid state-sidecar provenance. Header-only equality is insufficient and there is no legacy fallback for state-less runs.
 
 ### Step 8. Compute branch-wise concordance
 
@@ -140,6 +146,8 @@ The branch is absent as a primitive branch but represented through a fused branc
 
 ### `NA_topo`
 The branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree, consistent with topology-induced discordance.
+
+More precisely, the free-side state must be `U`, while the fixed-side state must be `D` with finite numeric primitive evidence. A directly mapped but nonnumeric free-side cell remains residual `NA` rather than becoming `NA_topo`.
 
 ---
 
@@ -183,6 +191,18 @@ This makes `Support` a branch-resolved cross-gene concordance summary on the pro
 The final branch matrices provide a standardized branch coordinate system across genes, while preserving biologically meaningful distinctions among different forms of missingness.
 
 This makes SplitAligner particularly suitable for large-scale comparative analyses in which branch-level signals need to be aggregated across many genes under heterogeneous taxon coverage.
+
+---
+
+## Determinism and provenance
+
+For a fixed parsed species-tree serialization, gene-by-branch scientific outputs are independent of gene-record order and Perl hash seed. Exact original gene IDs are restored from an injective storage-key map, so IDs such as `g/a` and `g_a` cannot overwrite one another.
+
+Equivalent species trees with different child orders can receive different textual `B` aliases. SplitAligner therefore writes `<label>.primitive_axis.tsv` and `<label>.run_manifest.json`; the canonical split plus its ordered ledger binding is authoritative. `finalize` fails closed if the FREE, FIX, or optional Support-tree ledger differs.
+
+Matrix and finalization runs are transactional. Existing label-owned outputs fail by default. Each successful run records a deterministic ownership inventory for every published file and complete output-directory tree. With `--force`, a complete replacement is built and validated in a temporary workspace, but destructive replacement is authorized only when the prior owner manifest is valid and every destination still matches its recorded type, mode, bytes, and descendants. Shared common artifacts are reused only when identical and are never force-replaced when they differ. Late publication failure rolls back only transaction-created objects and restores verified prior outputs.
+
+The v1.x transaction uses atomic `rename()` operations and therefore supports one publication filesystem device per invocation. Before ownership inspection or computation, SplitAligner compares the `st_dev` of the resolved current working directory with each destination's resolved publication parent, walking upward to the nearest existing parent directory when necessary. An existing destination object's inode device is not used as publication-device authority. A parent-device mismatch fails with an explicit publication-device error and cannot be overridden by `--force`; publication-parent paths and devices are re-resolved immediately before publication. External read-only inputs remain allowed on other devices.
 
 ---
 
