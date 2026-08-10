@@ -16,6 +16,10 @@ SplitAligner explicitly distinguishes biologically meaningful forms of missingne
 
 This repository contains the SplitAligner source code, example datasets, and documentation needed to reproduce the core branch-mapping workflow.
 
+**Tutorial:** [End-to-end SplitAligner tutorial](https://wujiaqi06.github.io/splitaligner/SplitAligner_tutorial.html)
+
+**Animation:** [Visual introduction to SplitAligner](https://wujiaqi06.github.io/splitaligner/SplitAligner_explainer.html)
+
 Frozen base release: `v1.2.0`
 
 Phase 3 repair candidate: based on frozen commit `4337e2cb62ac24238246893e85e3d2a5a51c8a7a`; external certification pending.
