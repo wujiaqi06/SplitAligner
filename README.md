@@ -109,6 +109,8 @@ This design allows absence states to be analyzed explicitly instead of being col
 
 All gene-tree splits are mapped onto the ordered primitive-coordinate ledger generated from the input species tree. Each ledger row binds a textual `B` alias to one canonical unrooted split, and the SHA-256 digest of that ordered mapping is recorded in the matrix run manifest.
 
+**Representation-invariant branch identity.** SplitAligner defines biological branch identity by canonical unrooted splits, not by display-root position, internal-node numbering, traversal order, or child order. If two rooted/Newick representations encode the same weighted unrooted split object, changing only the display root or serialization does not change the underlying canonical split identities. Human-readable `B` aliases and ordered ledgers are serialization-local and may differ across independently serialized species trees; canonical split keys, not `B` numbers alone, are the authoritative biological identities. Rooting may matter to upstream or downstream biological analyses. It is simply not part of SplitAligner's branch-identity key.
+
 Canonical splits plus their ordered ledger are the authoritative coordinate identity. Textual `B` IDs are serialization-local aliases: equivalent species trees written with different child orders can assign different `B` aliases to the same biological split. Matrix construction is deterministic for the same parsed species-tree serialization and is independent of gene-record processing order, but matrices may be finalized together only when their exact ordered `B`-to-split ledgers match.
 
 Canonical split keys use a versioned, injective hybrid encoding. Legacy-safe labels retain the historical readable form. Labels containing `..` or `|`, or beginning or ending with `.`, use an `HX1:` hexadecimal byte encoding because their membership boundaries are not unambiguous under the legacy `..` separator. A single internal period, as in `NC_045512.2`, remains legacy-safe. This prevents distinct taxon sets or graph edges from sharing one textual key without changing established safe-label matrices or `B` aliases.
@@ -130,6 +132,7 @@ Similarly, concordance-style summaries are often used to count supporting and co
 ## Highlights
 
 - Defines branch identity in projected split space rather than by naive branch-to-branch comparison
+- Representation-invariant biological branch identity: coordinates are keyed by canonical unrooted splits rather than display-root or positional node identities
 - Distinguishes three biologically meaningful missingness states: `NA_struct`, `NA_fuse`, and `NA_topo`
 - Produces standardized gene-by-branch matrices for both fixed-topology and free-topology gene trees
 - Makes fused branches explicit instead of treating projection-induced ambiguity as generic missing data
