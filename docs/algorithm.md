@@ -123,7 +123,7 @@ In the current implementation, for each branch `b`, `Support(b)` is computed on 
 
 `100 × n_free_numeric(b) / n_fix_numeric(b)`
 
-where both counts include only numeric branch-length evidence. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted.
+For a verified free-side `NA_fuse_topo` group, skip each member on both sides for that gene. The remaining counts use finite primitive branch-length evidence. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted.
 
 The resulting summary can also be written back onto the species tree as a branch-annotated output for visualization and downstream interpretation.
 

@@ -91,11 +91,13 @@ Next look for each surviving split on the free gene tree. A singleton can match 
 
 For example, if removing one taxon makes branches x and y project to the same split, then a gene can supply one length for {x, y}, or no matching edge for {x, y}. Neither result assigns separate lengths to x and y.
 
-**Counting topology outcomes.** The line in the Introduction is the historical primitive-branch description. For the layered five-way summary, specify the counting unit:
+**Counting topology outcomes.** The five-term inventory accounts for every reference branch on a gene, including branches that cannot be scored for recovery.
 
 `Total = Mapped + NA_struct + NA_fuse + NA_topo + NA_fuse_topo`
 
-Here `Mapped` counts displayed singletons, `NA_topo` absent singletons, and `NA_struct` branches that lost a side. The remaining two terms partition shared splits into displayed and absent. With **projected coordinates**, count each shared split once, plus one slot per structurally absent original branch. With **original branches**, weight a shared split by its number of members. In this second summary only, a member contributes to the bin for its group's outcome. Its matrix cell still reads `NA_fuse`. Both totals count matches irrespective of length. Neither is a sum of numeric matrix entries or a support denominator.
+On the original branch axis, each branch contributes once. `Mapped` counts displayed singletons, `NA_topo` counts absent singletons, and `NA_struct` counts branches that lost a side. Members of a shared split contribute to `NA_fuse` when the split is displayed or `NA_fuse_topo` when it is absent. Their primitive matrix cells retain `NA_fuse`. For an inventory of projected coordinates, count each shared split once and keep one slot per structurally absent original branch.
+
+**Branch recovery uses a separate denominator.** A member of an `NA_fuse_topo` group has no individually measurable branch in the reference projection and no recovered primitive branch on the free tree. For that gene, add **zero to the numerator and zero to the denominator** of primitive-branch support. Keep the group in the five-term inventory. By comparison, a singleton with finite fixed-side evidence whose split is absent from the free tree (`NA_topo`) contributes one to the Perl support denominator and zero to its numerator.
 
 Perl `finalize` writes both counts for the exact shared genes under `free_projection_accounting` in `<final_label>.finalize_manifest.json`. The count keys are `by_reference_primitive` and `by_projected_coordinate_plus_structural_absences`. Inputs without free-side v4 graph evidence cannot supply those counts. Use a fresh final output label when upgrading from a run with an older output inventory.
 
@@ -606,7 +608,7 @@ When `--species_tree` is provided, SplitAligner also computes a branch-wise conc
 
 `Support(b) = 100 * [number of numeric free-topology entries for branch b] / [number of numeric fixed-topology entries for branch b]`
 
-Only numeric branch evidence is counted. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted. The output column names `n_fix_non_na` and `n_free_non_na` are retained for compatibility, but they currently count numeric branch evidence rather than generic non-NA strings.
+For each shared gene, first exclude members of a verified free-side `NA_fuse_topo` group from both counts, including when the two input trees retain different taxa. On the remaining entries, count finite primitive lengths on their respective sides. A v3 free matrix has no projected-group ledger and follows its historical numeric counts. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted. The output column names `n_fix_non_na` and `n_free_non_na` are retained for compatibility, but they currently count numeric branch evidence rather than generic non-NA strings.
 
 ### `--mode finalize_fix`
 

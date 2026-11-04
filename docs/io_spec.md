@@ -206,6 +206,8 @@ When `--species_tree` is provided, SplitAligner computes `Support(b)` for each b
 - denominator: number of numeric branch-length entries for branch `b` in the fixed-topology matrix on shared genes
 - numerator: number of numeric branch-length entries for branch `b` in the free-topology matrix on shared genes
 
+A shared gene with a verified free-side `NA_fuse_topo` group contributes zero to both counts for each member of that group. The group stays in the topology inventory, and the gene still contributes to `n_shared_genes`. A v3 free matrix supplies no group ledger and uses the historical finite-evidence rule.
+
 The resulting outputs are:
 
 - `<final_label>.support_b.txt`: branch-wise summary table
