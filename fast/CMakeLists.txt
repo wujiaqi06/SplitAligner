@@ -62,6 +62,8 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME python_binding
            COMMAND ${CMAKE_COMMAND} -E env SAF_LIBRARY=$<TARGET_FILE:saf_shared>
                    PYTHONDONTWRITEBYTECODE=1 ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_binding.py)
+  add_test(NAME cli_layered_groups
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_layered_groups.py $<TARGET_FILE:saf>)
   add_test(NAME cli_quartet
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quartet_example.py $<TARGET_FILE:saf>)
 endif()
