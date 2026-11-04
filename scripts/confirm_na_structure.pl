@@ -39,6 +39,7 @@ use File::Spec;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 use SplitAligner::Newick qw(is_numeric_value);
+use SplitAligner::Provenance qw(write_json_file);
 use SplitAligner::CoordinateState qw(
     read_matrix_table
     read_state_matrix
@@ -46,6 +47,10 @@ use SplitAligner::CoordinateState qw(
 );
 use SplitAligner::TextIO qw(
     configure_utf8_stdio
+    close_utf8_writer
+    for_each_utf8_line
+    open_utf8_writer
+    print_utf8
     decode_argv_utf8
     read_utf8_file
     read_utf8_lines
@@ -56,13 +61,18 @@ decode_argv_utf8();
 configure_utf8_stdio();
 
 my ($fix_matrix_path, $free_matrix_path, $fix_state_path, $free_state_path,
-    $species_tree_path, $out_prefix);
+    $species_tree_path, $out_prefix, $fix_truth_path, $free_truth_path, $fix_groups_path, $free_groups_path, $accounting_path);
 
 GetOptions(
     'fix=s'          => \$fix_matrix_path,
     'free=s'         => \$free_matrix_path,
     'fix_state=s'    => \$fix_state_path,
     'free_state=s'   => \$free_state_path,
+    'accounting=s'   => \$accounting_path,
+    'fix_groups=s'   => \$fix_groups_path,
+    'free_groups=s'  => \$free_groups_path,
+    'fix_truth=s'    => \$fix_truth_path,
+    'free_truth=s'   => \$free_truth_path,
     'species_tree=s' => \$species_tree_path,
     'o=s'            => \$out_prefix,
 ) or die "[ERROR] Invalid command line arguments.\n";
@@ -160,16 +170,20 @@ if (@gene_id_alias_matches) {
         ". Please harmonize gene IDs in the input gene-tree files before rerunning SplitAligner.\n";
 }
 
-my %support_stats = initialize_support_stats(
-    fix_rows     => \%fix_row,
-    free_rows    => \%free_row,
-    fix_branches => \@fix_branches,
-    free_branches => \@free_branches,
-    shared_genes => \@shared_genes,
-);
+my %support_stats = map {
+    $_ => { n_shared_genes => scalar(@shared_genes), n_fix_non_na => 0, n_free_non_na => 0 }
+} @fix_primitive_branches;
 
 my %fix_state_index = map { $fix_state->{axis}[$_] => $_ } 0 .. $#{$fix_state->{axis}};
 my %free_state_index = map { $free_state->{axis}[$_] => $_ } 0 .. $#{$free_state->{axis}};
+my $fix_truth = defined $fix_truth_path ? read_projection_truth($fix_truth_path, $fix_state) : undef;
+my $free_truth = defined $free_truth_path ? read_projection_truth($free_truth_path, $free_state) : undef;
+my %shared = map { $_ => 1 } @shared_genes;
+validate_projected_groups($fix_groups_path, $fix_truth, $fix_state, \%shared) if defined $fix_groups_path;
+if (defined $free_groups_path) {
+    my $counts = validate_projected_groups($free_groups_path, $free_truth, $free_state, \%shared, "$out_prefix.free.projected_groups.tsv");
+    write_json_file($accounting_path, $counts) if defined $accounting_path;
+}
 my @out_fix_lines = ($fix_header_line);
 my @out_free_lines = ($free_header_line);
 
@@ -182,11 +196,20 @@ for my $gene (@shared_genes) {
     my @fix_states = @{$fix_state->{rows}{$gene}};
     my @free_states = @{$free_state->{rows}{$gene}};
 
-    for my $b (@free_branches) {
-        next unless exists $fix{$b};
+    for my $b (@free_primitive_branches) {
 
         my $fix_code = $fix_states[ $fix_state_index{$b} ];
         my $free_code = $free_states[ $free_state_index{$b} ];
+        my $free_is_fused = $free_truth && $free_truth->{rows}{$gene}[ $free_state_index{$b} ] eq 'NA_fuse';
+        # Validated group evidence binds an absent shared projection to raw U.
+        # A different FIX taxon mask may still give this member a finite length.
+        my $excluded_from_support = defined($free_groups_path) && $free_is_fused && $free_code eq 'U';
+        unless ($excluded_from_support) {
+            $support_stats{$b}{n_fix_non_na}++ if is_numeric_branch_evidence($fix{$b});
+            $support_stats{$b}{n_free_non_na}++ if is_numeric_branch_evidence($free{$b});
+        }
+        $fix{$b} = 'NA_fuse' if $fix_truth && $fix_truth->{rows}{$gene}[ $fix_state_index{$b} ] eq 'NA_fuse';
+        $free{$b} = 'NA_fuse' if $free_is_fused;
         $fix{$b} = 'NA_struct' if $fix{$b} eq 'NA' && $fix_code eq 'S';
 
         if ($free{$b} eq 'NA' && $free_code eq 'S') {
@@ -216,6 +239,103 @@ if (defined $species_tree_path && $species_tree_path ne '') {
         out_support       => $out_support,
         species_tree_path => $species_tree_path,
     );
+}
+
+# A group can be observed without a length. A joint diagnosis belongs to
+# the missing group in the paired free tree and never replaces a member label.
+sub validate_projected_groups {
+    my ($path, $truth, $raw, $shared, $paired_free_output) = @_;
+    die "[ERROR] Projected groups require primitive projection truth.\n" unless $truth;
+    my $header = join("\t", qw(gene projected_split members status length));
+    my %index = map { $truth->{branches}[$_] => $_ } 0 .. $#{$truth->{branches}};
+    my %remaining;
+    my %singles = map { $_ => 0 } qw(Mapped NA_struct NA_topo NA_fuse NA_fuse_topo);
+    for my $gene (@{$truth->{genes}}) {
+        $remaining{$gene} = {};
+        for my $i (0 .. $#{$truth->{branches}}) {
+            my $class = $truth->{rows}{$gene}[$i];
+            if ($class eq 'NA_fuse') {
+                $remaining{$gene}{ $truth->{branches}[$i] } = 1;
+            } elsif ($shared->{$gene}) {
+                $singles{$class eq 'not_displayed' ? 'NA_topo' : $class}++;
+            }
+        }
+    }
+    my %by_member = %singles;
+    my %by_coordinate = %singles;
+    my $output = defined $paired_free_output ? open_utf8_writer($paired_free_output) : undef;
+    my (%closed_genes, %seen_splits, $current_gene);
+    my $lines = for_each_utf8_line($path, sub {
+        my ($line, $line_no) = @_;
+        if ($line_no == 1) {
+            die "[ERROR] Bad projected-group header in $path.\n" unless $line eq $header;
+            print_utf8($output, "$header\n") if $output;
+            return;
+        }
+        my @field = split(/\t/, $line, -1);
+        my ($gene, $split, $pattern, $status, $length) = @field;
+        die "[ERROR] Invalid projected group at $path line $line_no.\n"
+            unless @field == 5 && exists $remaining{$gene} && $split ne ''
+                && ($status eq 'recovered' || $status eq 'not_displayed')
+                && ($length eq 'NA' || ($status eq 'recovered' && is_numeric_value($length)));
+        if (!defined $current_gene || $gene ne $current_gene) {
+            die "[ERROR] Nonconsecutive projected groups for $gene.\n" if $closed_genes{$gene}++;
+            %seen_splits = ();
+            $current_gene = $gene;
+        }
+        die "[ERROR] Duplicate projected split for $gene in $path.\n" if $seen_splits{$split}++;
+        my @members = split(/\|/, $pattern, -1);
+        die "[ERROR] Singleton projected group in $path for $gene.\n" unless @members > 1;
+        for my $member (@members) {
+            my $expected_raw = $status eq 'recovered' ? 'F' : 'U';
+            die "[ERROR] Inconsistent projected group $pattern for $gene.\n"
+                unless delete($remaining{$gene}{$member}) && $raw->{rows}{$gene}[ $index{$member} ] eq $expected_raw;
+        }
+        if ($output && $shared->{$gene}) {
+            my $class = $status eq 'recovered' ? 'NA_fuse' : 'NA_fuse_topo';
+            $by_member{$class} += @members;
+            $by_coordinate{$class}++;
+            $field[3] = $class if $status eq 'not_displayed';
+            print_utf8($output, join("\t", @field), "\n");
+        }
+    });
+    die "[ERROR] Empty projected-group file: $path\n" unless $lines;
+    for my $gene (keys %remaining) {
+        die "[ERROR] Missing projected group for $gene in $path.\n" if keys %{$remaining{$gene}};
+    }
+    return unless $output;
+    close_utf8_writer($output, $paired_free_output);
+    for my $counts (\%by_member, \%by_coordinate) {
+        my $total = 0;
+        $total += $_ for values %{$counts};
+        $counts->{Total} = $total;
+    }
+    die "[ERROR] Incomplete free primitive accounting.\n"
+        unless $by_member{Total} == scalar(keys %{$shared}) * scalar(@{$truth->{branches}});
+    return { by_reference_primitive => \%by_member,
+             by_projected_coordinate_plus_structural_absences => \%by_coordinate };
+}
+
+sub read_projection_truth {
+    my ($path, $state) = @_;
+    my $table = read_matrix_table($path);
+    die "[ERROR] Primitive truth axis differs from raw state: $path\n"
+        unless join("\t", @{$table->{branches}}) eq join("\t", @{$state->{axis}});
+    die "[ERROR] Primitive truth gene order differs from raw state: $path\n"
+        unless join("\t", @{$table->{genes}}) eq join("\t", @{$state->{genes}});
+    # U covers both absent projected identities and an endpoint singleton which
+    # the legacy matrix could not report as independently observable.
+    my %valid = (D => { Mapped => 1 }, F => { NA_fuse => 1 }, S => { NA_struct => 1 },
+                 U => { Mapped => 1, NA_fuse => 1, not_displayed => 1 });
+    for my $gene (@{$table->{genes}}) {
+        for my $i (0 .. $#{$state->{axis}}) {
+            my $truth = $table->{rows}{$gene}[$i];
+            my $raw = $state->{rows}{$gene}[$i];
+            die "[ERROR] Primitive truth '$truth' incompatible with raw state '$raw' for $gene $state->{axis}[$i].\n"
+                unless $valid{$raw}{$truth};
+        }
+    }
+    return $table;
 }
 
 sub write_support_outputs {
@@ -364,48 +484,6 @@ sub support_label {
     my ($branch_id, $support_ref) = @_;
     my $support = exists $support_ref->{$branch_id} ? $support_ref->{$branch_id} : '0.0000000000';
     return $support;
-}
-
-sub initialize_support_stats {
-    my %arg = @_;
-
-    my $fix_rows_ref      = $arg{fix_rows};
-    my $free_rows_ref     = $arg{free_rows};
-    my $fix_branches_ref  = $arg{fix_branches};
-    my $free_branches_ref = $arg{free_branches};
-    my $shared_genes_ref  = $arg{shared_genes};
-
-    my %stats;
-    for my $b (@{$fix_branches_ref}) {
-        $stats{$b} = {
-            n_shared_genes => scalar(@{$shared_genes_ref}),
-            n_fix_non_na => 0,
-            n_free_non_na => 0,
-        };
-    }
-
-    my %free_index = map { $free_branches_ref->[$_] => $_ } 0 .. $#{$free_branches_ref};
-
-    for my $gene (@{$shared_genes_ref}) {
-        next unless exists $fix_rows_ref->{$gene} && exists $free_rows_ref->{$gene};
-
-        my @fix_vals  = split(/\t/, $fix_rows_ref->{$gene}, -1);
-        my @free_vals = split(/\t/, $free_rows_ref->{$gene}, -1);
-
-        for my $i (0 .. $#{$fix_branches_ref}) {
-            my $branch    = $fix_branches_ref->[$i];
-            my $fix_value = defined $fix_vals[$i] ? $fix_vals[$i] : 'NA';
-
-            $stats{$branch}{n_fix_non_na}++ if is_numeric_branch_evidence($fix_value);
-
-            next unless exists $free_index{$branch};
-            my $free_idx   = $free_index{$branch};
-            my $free_value = defined $free_vals[$free_idx] ? $free_vals[$free_idx] : 'NA';
-            $stats{$branch}{n_free_non_na}++ if is_numeric_branch_evidence($free_value);
-        }
-    }
-
-    return %stats;
 }
 
 sub detect_hyphen_underscore_aliases {

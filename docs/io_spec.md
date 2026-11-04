@@ -143,7 +143,7 @@ Interpretation:
 - `<label>.matrix_with_fuse.txt` additionally includes fused-branch columns such as `B12|B47`
 - `<label>.gene_id_map.tsv` maps injective filesystem storage keys back to exact original gene IDs
 - `<label>.primitive_state.tsv` uses schema `SplitAligner-primitive-state-v1`; its header is the exact primitive axis and each cell is `S`, `D`, `F`, or `U`
-- `<label>.run_manifest.json` uses schema `SplitAligner-run-manifest-v3` and records the canonical-key schema, ordered coordinate mapping and SHA-256, input hashes, original record count, identity map, matrix hashes, the bound primitive-state provenance, and a `SplitAligner-output-ownership-v1` inventory covering every published file and directory descendant
+- `<label>.run_manifest.json` uses schema `SplitAligner-run-manifest-v4` with hashes for the primitive-truth and projected-group files and records the canonical-key schema, ordered coordinate mapping and SHA-256, input hashes, original record count, identity map, matrix hashes, the bound primitive-state provenance, and a `SplitAligner-output-ownership-v1` inventory covering every published file and directory descendant
 - primitive matrix columns always come from the complete ledger and are never inferred from gene-observed branch patterns
 
 ---
@@ -197,7 +197,7 @@ Examples:
 
 The final comparison is defined only for genes shared between the fixed-topology and free-topology inputs. If no shared genes are found, SplitAligner stops with an error.
 
-Before any classified output is created, `finalize` verifies each matrix against its v3 manifest, validates the bound primitive-state hash/schema/axis/genes/cells, and compares the exact ordered canonical coordinate mappings. A missing or altered state sidecar, earlier v2 manifest, matrix-hash mismatch, ledger mismatch, or Support-tree mismatch is fatal. Matching textual `B1...Bn` headers alone are not sufficient, and no unsafe header-only fallback is enabled.
+Before any classified output is created, `finalize` verifies each matrix against its run manifest (v4, or legacy v3 without graph evidence), validates the bound primitive-state hash/schema/axis/genes/cells, and compares the exact ordered canonical coordinate mappings. A missing or altered state sidecar, earlier v2 manifest, matrix-hash mismatch, ledger mismatch, or Support-tree mismatch is fatal. Matching textual `B1...Bn` headers alone are not sufficient, and no unsafe header-only fallback is enabled.
 
 ### Branch-wise `Support`
 
@@ -205,6 +205,8 @@ When `--species_tree` is provided, SplitAligner computes `Support(b)` for each b
 
 - denominator: number of numeric branch-length entries for branch `b` in the fixed-topology matrix on shared genes
 - numerator: number of numeric branch-length entries for branch `b` in the free-topology matrix on shared genes
+
+A shared gene with a verified free-side `NA_fuse_topo` group contributes zero to both counts for each member of that group. The group stays in the topology inventory, and the gene still contributes to `n_shared_genes`. A v3 free matrix supplies no group ledger and uses the historical finite-evidence rule.
 
 The resulting outputs are:
 
@@ -221,15 +223,15 @@ The resulting outputs are:
 
 Generic missing value before final classification.
 
-### `NA_fuse`
+### `NA_fuse` and `NA_fuse_topo`
 
-The branch is absent as a primitive branch but represented through a fused branch after taxon pruning.
+New matrix runs bind the primitive truth and projected-group tables to their run manifests. Paired finalization preserves `NA_fuse` on both member matrices. In `<final_label>.free.projected_groups.tsv`, an unrecovered shared split has status `NA_fuse_topo`; a recovered split may have a finite length or an unavailable value. Neither group outcome is propagated as a numeric value to members.
 
 ### `NA_struct`
 
 The projected branch is structurally absent after projection only when a projected side disappears entirely, so the branch has no projected identity and is not evaluable for that gene.
 
-For internal branches, a projected `1|k` split is not emitted as an independently observable primitive internal branch, but it is retained for fused-path bookkeeping. If a numeric fused coordinate explains the primitive absence, the primitive cell is classified as `NA_fuse`, not `NA_struct`.
+For internal branches, a projected `1|k` split is not emitted as an independently observable primitive internal branch, but it is retained for fused-path bookkeeping. For a shared split, paired v4 outputs classify every primitive member as `NA_fuse`, whether or not the group was recovered.
 
 ### `NA_topo`
 

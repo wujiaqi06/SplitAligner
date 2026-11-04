@@ -15,6 +15,7 @@ our @EXPORT_OK = qw(
     decode_utf8_strict
     encode_utf8_strict
     getcwd_utf8
+    for_each_utf8_line
     open_utf8_writer
     print_utf8
     read_raw_file
@@ -105,6 +106,22 @@ sub read_utf8_lines {
     s/\r\z// for @lines;
     pop @lines if @lines && $lines[-1] eq '';
     return \@lines;
+}
+
+# Projected keys can be long. Keep one record in memory when walking their ledger.
+sub for_each_utf8_line {
+    my ($path, $visit) = @_;
+    open my $fh, '<:raw', $path or die "[ERROR] Cannot open $path: $!\n";
+    my $number = 0;
+    while (my $line = <$fh>) {
+        $line =~ s/\r?\n\z//;
+        ++$number;
+        my $text = decode_utf8_strict($line, "$path line $number");
+        die "[ERROR][$path] UTF-8 BOM is not permitted.\n" if $number == 1 && $text =~ /\A\x{FEFF}/;
+        $visit->($text, $number);
+    }
+    close $fh or die "[ERROR] Cannot close $path: $!\n";
+    return $number;
 }
 
 sub open_utf8_writer {

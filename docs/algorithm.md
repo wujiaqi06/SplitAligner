@@ -57,7 +57,7 @@ Multiple distinct species-tree branches may collapse into the same projected spl
 
 This means that the signal is represented through a fused branch rather than through a unique one-to-one correspondence.
 
-If a numeric fused coordinate explains the primitive absence, the primitive branch is classified as `NA_fuse`.
+Members of a shared nonempty projection are classified as `NA_fuse` in the layered output, independently of numeric availability.
 
 This corresponds to:
 
@@ -113,7 +113,7 @@ These matrices can optionally include fused-branch completion.
 
 ### Step 7. Compare fixed-tree and free-tree matrices
 
-In the final stage, fixed-topology and free-topology outputs are compared to classify missing values into biologically meaningful categories. Classification uses each side's explicit state rather than inferring structural absence from numeric missingness. Before cell comparison, their v3 run manifests must contain the same complete ordered `B`-to-canonical-split mapping, matching matrix hashes, and valid state-sidecar provenance. Header-only equality is insufficient and there is no legacy fallback for state-less runs.
+In the final stage, fixed-topology and free-topology outputs are compared to classify missing values into biologically meaningful categories. Classification uses each side's explicit state rather than inferring structural absence from numeric missingness. Before cell comparison, their run manifests must contain the same complete ordered `B`-to-canonical-split mapping, matching matrix hashes, and valid state-sidecar provenance. Header-only equality is insufficient and there is no legacy fallback for state-less runs.
 
 ### Step 8. Compute branch-wise concordance
 
@@ -123,7 +123,7 @@ In the current implementation, for each branch `b`, `Support(b)` is computed on 
 
 `100 × n_free_numeric(b) / n_fix_numeric(b)`
 
-where both counts include only numeric branch-length evidence. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted.
+For a verified free-side `NA_fuse_topo` group, skip each member on both sides for that gene. The remaining counts use finite primitive branch-length evidence. `NA`, `NA_fuse`, `NA_struct`, `NA_topo`, `NaN`, `Inf`, and empty strings are not counted.
 
 The resulting summary can also be written back onto the species tree as a branch-annotated output for visualization and downstream interpretation.
 
@@ -141,8 +141,9 @@ The projected species-tree branch becomes structurally absent only when a projec
 
 Internal `1|k` projections are treated separately: they are not emitted as independently observable primitive internal branches, but they remain fuse-eligible for downstream bookkeeping.
 
-### `NA_fuse`
-The branch is absent as a primitive branch but represented through a fused branch after taxon pruning.
+### `NA_fuse` and `NA_fuse_topo`
+
+The layered outputs classify each member of a shared projection as `NA_fuse` independently of branch length. A free tree missing the whole split receives one `NA_fuse_topo` on the group. Branch lengths belong to the group once.
 
 ### `NA_topo`
 The branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree, consistent with topology-induced discordance.

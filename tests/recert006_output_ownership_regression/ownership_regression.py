@@ -306,6 +306,7 @@ def test_unowned_finalize_outputs(base: Path) -> None:
         "fix.matrix_with_fuse.na_fuse.txt",
         "out.fix.na_classified.txt",
         "out.free.na_classified.txt",
+        "out.free.projected_groups.tsv",
         "out.support_b.txt",
         "species_tree.support_b.nwk",
         "out.finalize_manifest.json",
@@ -482,6 +483,7 @@ def test_valid_finalize_force(base: Path) -> None:
         paired / "fix.matrix_with_fuse.na_fuse.txt",
         paired / "out.fix.na_classified.txt",
         paired / "out.free.na_classified.txt",
+        paired / "out.free.projected_groups.tsv",
         paired / "out.support_b.txt",
         paired / "species_tree.support_b.nwk",
         paired / "out.finalize_manifest.json",
@@ -625,6 +627,7 @@ def test_late_rollback(base: Path) -> None:
         final_case / "fix.matrix_with_fuse.na_fuse.txt",
         final_case / "out.fix.na_classified.txt",
         final_case / "out.free.na_classified.txt",
+        final_case / "out.free.projected_groups.tsv",
         final_case / "out.finalize_manifest.json",
     ]
     before = snapshot_paths(final_outputs)
@@ -669,6 +672,7 @@ def test_inventory_and_determinism(base: Path) -> None:
         "fix.matrix_with_fuse.na_fuse.txt",
         "out.fix.na_classified.txt",
         "out.free.na_classified.txt",
+        "out.free.projected_groups.tsv",
         "out.support_b.txt",
         "species_tree.support_b.nwk",
     }

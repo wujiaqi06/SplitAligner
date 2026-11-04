@@ -195,7 +195,8 @@ cmp -s "$TMP/sa009/a/splits.sorted" "$TMP/sa009/b/splits.sorted"
 if cmp -s "$TMP/sa009/a/x.primitive_axis.tsv" "$TMP/sa009/b/x.primitive_axis.tsv"; then
     fail 'SA-009 fixture did not exercise serialization-local aliases'
 fi
-grep -q 'serialization-local aliases' "$ROOT/README.md"
+grep -Fq 'docs/workflow-reference.md' "$ROOT/README.md"
+grep -Fq 'serialization-local aliases' "$ROOT/docs/workflow-reference.md"
 pass 'SA-009 honest serialization-local B-alias contract'
 
 # SOL-010: textual B headers are insufficient; canonical ledgers must match.

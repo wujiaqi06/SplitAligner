@@ -12,7 +12,7 @@ use File::Basename qw(basename dirname);
 use File::Copy qw(copy);
 use File::Path qw(make_path remove_tree);
 use File::Spec;
-use File::Temp qw(tempdir);
+use File::Temp qw(tempdir tempfile);
 use FindBin qw($RealBin);
 use Getopt::Long qw(GetOptions);
 use lib "$RealBin/lib";
@@ -59,6 +59,7 @@ use SplitAligner::TextIO qw(
     configure_utf8_stdio
     decode_argv_utf8
     decode_filesystem_path_utf8
+    for_each_utf8_line
     getcwd_utf8
     read_utf8_lines
 );
@@ -288,7 +289,8 @@ sub run_matrix_mode {
             );
             my $matrix_with_fuse_sha = file_sha256("$label0.matrix_with_fuse.txt");
             my $manifest = {
-                schema_version => 'SplitAligner-run-manifest-v3',
+                schema_version => 'SplitAligner-run-manifest-v4',
+                projection_graph => projection_graph_record($label0),
                 mode           => 'matrix',
                 label          => $label0,
                 program        => implementation_identity(),
@@ -394,7 +396,10 @@ sub run_finalize_mode {
         "FIX manifest $fix_manifest_path", "FREE manifest $free_manifest_path",
     );
 
+    my $free_graph = load_projection_graph($free_meta, $free_manifest_path, 'FREE');
+    my $fix_graph = load_projection_graph($fix_meta, $fix_manifest_path, 'FIX');
     my @inputs = (
+        map({ values %{$_} } $free_graph, $fix_graph),
         $free_input, $fix_input,
         $free_manifest_input, $fix_manifest_input,
         $free_state_input, $fix_state_input,
@@ -461,6 +466,15 @@ sub run_finalize_mode {
             type        => 'file',
         },
     );
+    my $paired_groups_name = "$final.free.projected_groups.tsv";
+    if ($free_graph->{projected_groups}) {
+        push @items, {
+            source      => $paired_groups_name,
+            destination => File::Spec->catfile($cwd, $paired_groups_name),
+            role        => 'paired FREE projected groups',
+            type        => 'file',
+        };
+    }
     if ($species_abs) {
         push @items,
             {
@@ -525,6 +539,28 @@ sub run_finalize_mode {
                 or die "[ERROR] Cannot stage species branch map: $!\n";
         }
 
+        my @truth_args;
+        my $accounting_path;
+        if ($free_graph->{projected_groups}) {
+            my $fh;
+            ($fh, $accounting_path) = tempfile('.accounting-XXXXXXXX', DIR => $tmp);
+            close $fh or die "[ERROR] Cannot close staged accounting file: $!\n";
+            push @truth_args, '--accounting', $accounting_path;
+        }
+        for my $entry (['free', $free_graph], ['fix', $fix_graph]) {
+            my ($role, $graph) = @{$entry};
+            next unless $graph->{primitive_truth};
+            my $meta = $role eq 'free' ? $free_meta : $fix_meta;
+            for my $kind (qw(primitive_truth projected_groups)) {
+                my ($fh, $path) = tempfile('.projection-XXXXXXXX', DIR => $tmp);
+                close $fh or die "[ERROR] Cannot close staged graph file: $!\n";
+                copy($graph->{$kind}{resolved_path}, $path) or die "[ERROR] Cannot stage $role $kind: $!\n";
+                die "[ERROR] Staged $role $kind differs from its run manifest.\n"
+                    unless file_sha256($path) eq $meta->{projection_graph}{$kind}{sha256};
+                my $option = $kind eq 'primitive_truth' ? 'truth' : 'groups';
+                push @truth_args, "--${role}_$option", $path;
+            }
+        }
         in_directory($tmp, sub {
             run_perl_script('extract_na_fuse.pl', [
                 '-i', basename($free_abs), '-o', $free_na_name,
@@ -539,6 +575,7 @@ sub run_finalize_mode {
                 '--free', $free_na_name,
                 '--fix_state', basename($fix_state_abs),
                 '--free_state', basename($free_state_abs),
+                @truth_args,
                 ($species_abs ? ('--species_tree', basename($species_abs)) : ()),
                 '-o', $final,
             ], 'Classify NA_struct and NA_topo');
@@ -547,6 +584,7 @@ sub run_finalize_mode {
                 $free_na_name, $fix_na_name,
                 "$final.fix.na_classified.txt", "$final.free.na_classified.txt",
             );
+            push @output_names, $paired_groups_name if $free_graph->{projected_groups};
             push @output_names, "$final.support_b.txt", $support_tree_name if $species_abs;
             my %output_hash = map {
                 $_ => { filename => $_, sha256 => file_sha256($_) }
@@ -554,6 +592,11 @@ sub run_finalize_mode {
             my $manifest = {
                 schema_version => 'SplitAligner-finalize-manifest-v2',
                 mode           => 'finalize',
+                ($accounting_path ? (free_projection_accounting => read_json_file($accounting_path)) : ()),
+                primitive_fusion_source => {
+                    free => $free_graph->{primitive_truth} ? 'projection_graph' : 'legacy_numeric_evidence',
+                    fix  => $fix_graph->{primitive_truth}  ? 'projection_graph' : 'legacy_numeric_evidence',
+                },
                 final_label    => $final,
                 program        => implementation_identity(),
                 primitive_axis_sha256 => $fix_meta->{axis}{sha256},
@@ -720,6 +763,56 @@ sub run_perl_script {
     }
 }
 
+# The reference axis and both graph artifacts belong to the same matrix run.
+sub projection_graph_record {
+    my ($label) = @_;
+    my %graph = (schema_version => 'SplitAligner-projection-graph-v1');
+    for my $kind (qw(primitive_truth projected_groups)) {
+        my $path = File::Spec->catfile("${label}_split_branch_label", "$label.$kind.tsv");
+        $graph{$kind} = { filename => $path, sha256 => file_sha256($path) };
+    }
+    my $truth = read_matrix_table($graph{primitive_truth}{filename});
+    my %primitive = map { $_ => 0 } qw(Mapped NA_struct NA_fuse not_displayed);
+    for my $gene (@{$truth->{genes}}) {
+        $primitive{$_}++ for @{$truth->{rows}{$gene}};
+    }
+    my %groups = (recovered => 0, not_displayed => 0);
+    for_each_utf8_line($graph{projected_groups}{filename}, sub {
+        my ($line, $i) = @_;
+        return if $i == 1;
+        my (undef, undef, undef, $status) = split(/\t/, $line);
+        $groups{$status}++;
+    });
+    $graph{primitive_counts} = \%primitive;
+    $graph{fused_group_counts} = \%groups;
+    return \%graph;
+}
+
+sub load_projection_graph {
+    my ($meta, $manifest_path, $role) = @_;
+    if ($meta->{schema_version} eq 'SplitAligner-run-manifest-v3') {
+        warn "[WARN] $role matrix has legacy v3 provenance. Its primitive fusion labels use numeric evidence. Regenerate matrix mode for projection-group results.\n";
+        return {};
+    }
+    my $graph = $meta->{projection_graph};
+    die "[ERROR] Unsupported or missing $role projection graph.\n"
+        unless ref($graph) eq 'HASH' && ($graph->{schema_version} // '') eq 'SplitAligner-projection-graph-v1';
+    my $label = $meta->{label};
+    validate_matrix_label($label);
+    my %inputs;
+    for my $kind (qw(primitive_truth projected_groups)) {
+        my $filename = File::Spec->catfile("${label}_split_branch_label", "$label.$kind.tsv");
+        my $record = $graph->{$kind};
+        die "[ERROR] Incomplete $role $kind record in $manifest_path.\n"
+            unless ref($record) eq 'HASH' && ($record->{filename} // '') eq $filename;
+        my $input = build_input_record(role => "$role $kind", path => File::Spec->catfile(dirname($manifest_path), $filename));
+        die "[ERROR] $role $kind differs from its run manifest.\n"
+            unless $input->{sha256} eq ($record->{sha256} // '');
+        $inputs{$kind} = $input;
+    }
+    return \%inputs;
+}
+
 sub load_and_verify_matrix_manifest {
     my ($matrix_path, $explicit_manifest, $role) = @_;
     my $manifest_path = $explicit_manifest;
@@ -738,7 +831,7 @@ sub load_and_verify_matrix_manifest {
         die "[ERROR] $role matrix was generated without coordinate-state provenance. Regenerate it with the repaired SplitAligner matrix mode before finalization.\n";
     }
     die "[ERROR] Unsupported $role manifest schema in $manifest_path.\n"
-        unless $schema eq 'SplitAligner-run-manifest-v3';
+        unless $schema eq 'SplitAligner-run-manifest-v3' || $schema eq 'SplitAligner-run-manifest-v4';
     die "[ERROR] Unsupported canonical split-key schema in $role manifest $manifest_path.\n"
         unless ($manifest->{axis}{canonical_key_schema} // '')
             eq 'SplitAligner-canonical-split-key-v2';

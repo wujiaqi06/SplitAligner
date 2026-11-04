@@ -39,6 +39,7 @@ use SplitAligner::Newick qw(
     canonical_split
     canonicalize_split
     split_taxon_sets
+    is_numeric_value
 );
 use SplitAligner::CoordinateState qw(write_state_matrix);
 use SplitAligner::Provenance qw(read_axis_ledger);
@@ -159,6 +160,10 @@ closedir $DH;
 
 my %observed_branch_patterns;  # for summary output
 my %state_for_gene;
+my $truth_fh = open_utf8_writer(File::Spec->catfile($out_dir, "$label.primitive_truth.tsv"));
+my $groups_fh = open_utf8_writer(File::Spec->catfile($out_dir, "$label.projected_groups.tsv"));
+print_utf8($truth_fh, join("\t", 'gene', @primitive_axis), "\n");
+print_utf8($groups_fh, "gene\tprojected_split\tmembers\tstatus\tlength\n");
 my %seen_storage;
 
 for my $fname (@split_files) {
@@ -206,6 +211,7 @@ for my $fname (@split_files) {
 
     my @missing_species = array_split(\@all_species, \@gene_species);
     my %state = map { $_ => 'U' } @primitive_axis;
+    my %truth = map { $_ => 'NA_struct' } @primitive_axis;
 
     # Build projected species axis under missing taxa
     my %projected_branch_meta = map {
@@ -254,9 +260,9 @@ for my $fname (@split_files) {
 
         for my $branch_id (sort keys %projected_branch_meta) {
             my $proj_split = $projected_branch_meta{$branch_id}{split};
+            push @{ $split_to_projected_branches{$proj_split} }, $branch_id;
             if (exists $gene_split_to_values{$proj_split}) {
                 $hit++;
-                push @{ $split_to_projected_branches{$proj_split} }, $branch_id;
             } else {
                 $miss++;
                 print_utf8($ERR, "[MISS] $fname\t$branch_id\t$proj_split\n");
@@ -266,7 +272,24 @@ for my $fname (@split_files) {
         print_utf8($ERR, "[SUMMARY] $fname\thit=$hit\tmiss=$miss\tmissing_taxa=" . join(',', @missing_species) . "\n");
 
         for my $gene_split (sort keys %split_to_projected_branches) {
-            my @members = @{ $split_to_projected_branches{$gene_split} };
+            my @members = sort_branch_ids(@{ $split_to_projected_branches{$gene_split} });
+            my $present = exists $gene_split_to_values{$gene_split};
+            if (@members > 1) {
+                $truth{$_} = 'NA_fuse' for @members;
+                # tree_to_splits has already pooled both edges at a binary root.
+                my $length = 'NA';
+                if ($present) {
+                    my $values = $gene_split_to_values{$gene_split};
+                    die "[ERROR] Expected one pooled value for projected split '$gene_split' in $fname.\n"
+                        unless @{$values} == 1;
+                    $length = $values->[0] if is_numeric_value($values->[0]);
+                }
+                print_utf8($groups_fh, join("\t", $gene_id, $gene_split, join('|', @members),
+                    $present ? 'recovered' : 'not_displayed', $length), "\n");
+            } else {
+                $truth{$members[0]} = $present ? 'Mapped' : 'not_displayed';
+            }
+            next unless $present;
             my $has_observable = 0;
             for my $branch_id (@members) {
                 if ($projected_branch_meta{$branch_id}{observable}) {
@@ -286,7 +309,7 @@ for my $fname (@split_files) {
 
             next if @members == 1 && !$has_observable;
 
-            my $branch_pattern = join('|', sort_branch_ids(@members));
+            my $branch_pattern = join('|', @members);
             for my $val (@{ $gene_split_to_values{$gene_split} }) {
                 print_utf8($OUT, "$gene_split\t$branch_pattern\t$val\n");
                 $observed_branch_patterns{$branch_pattern} = 1;
@@ -298,20 +321,25 @@ for my $fname (@split_files) {
         for my $axis_split (sort keys %branch_to_split) {
             if (exists $gene_split_to_values{$axis_split}) {
                 my $branch_id = $branch_to_split{$axis_split};
+                $truth{$branch_id} = 'Mapped';
                 $state{$branch_id} = 'D';
                 for my $val (@{ $gene_split_to_values{$axis_split} }) {
                     print_utf8($OUT, "$axis_split\t$branch_id\t$val\n");
                     $observed_branch_patterns{$branch_id} = 1;
                 }
             } else {
-                # keep silent (original script printed to STDOUT); logging would be noisy for large data
+                $truth{ $branch_to_split{$axis_split} } = 'not_displayed';
             }
         }
     }
 
+    print_utf8($truth_fh, join("\t", $gene_id, map { $truth{$_} } @primitive_axis), "\n");
     $state_for_gene{$gene_id} = [ map { $state{$_} } @primitive_axis ];
     close_utf8_writer($OUT, $out_path);
 }
+
+close_utf8_writer($truth_fh, File::Spec->catfile($out_dir, "$label.primitive_truth.tsv"));
+close_utf8_writer($groups_fh, File::Spec->catfile($out_dir, "$label.projected_groups.tsv"));
 
 # Write branch pattern summary
 write_utf8_file($pattern_out, join('', map { "$_\n" } sort keys %observed_branch_patterns));

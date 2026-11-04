@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "Please cite this software when using SplitAlignerFast."
+title: "SplitAlignerFast"
+type: software
+authors:
+  - family-names: "Wu"
+    given-names: "Jiaqi"
+version: "0.2.0-rc.2"
+license: MIT
