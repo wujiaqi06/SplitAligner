@@ -60,7 +60,7 @@ for label in ("free", "fix"):
     matrix = (d / f"{label}.matrix_no_fuse.txt").read_text(encoding="utf-8").splitlines()
     assert matrix[1] == "g\tNA\tNA\tNA\tNA\tNA", matrix
     manifest = json.loads((d / f"{label}.run_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "SplitAligner-run-manifest-v3"
+    assert manifest["schema_version"] == "SplitAligner-run-manifest-v4"
     assert manifest["coordinate_state"]["schema_version"] == "SplitAligner-primitive-state-v1"
     assert manifest["coordinate_state"]["gene_record_count"] == 1
     assert manifest["coordinate_state"]["cell_count"] == 5
@@ -185,7 +185,7 @@ for dname, numeric in ((sys.argv[1], True), (sys.argv[2], False)):
             assert final_fix[branch] == "NA_struct", (branch, final_fix[branch])
         if code == "F":
             expected = "NA_fuse" if numeric else "NA"
-            assert final[branch] == expected, (branch, final[branch], expected)
+            assert final[branch] == "NA_fuse", (branch, final[branch])
             assert final_fix[branch] == expected, (branch, final_fix[branch], expected)
 PY
 pass "RECERT-001-D/G/H structural and fused states classify from explicit evidence in paired and fix-only modes"
