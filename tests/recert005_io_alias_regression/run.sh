@@ -315,6 +315,13 @@ cp "$SEED/free.primitive_state.tsv" "$CASE/free_input/free.primitive_state.tsv"
 cp "$SEED/fix.matrix_with_fuse.txt" "$CASE/fix_input/fix.matrix_with_fuse.txt"
 cp "$SEED/fix.run_manifest.json" "$CASE/fix_input/fix.run_manifest.json"
 cp "$SEED/fix.primitive_state.tsv" "$CASE/fix_input/fix.primitive_state.tsv"
+# v4 paired finalization also binds both projection ledgers for each role.
+for side in free fix; do
+    destination="$CASE/${side}_input/${side}_split_branch_label"
+    mkdir -p "$destination"
+    cp "$SEED/${side}_split_branch_label/$side.primitive_truth.tsv" "$destination/"
+    cp "$SEED/${side}_split_branch_label/$side.projected_groups.tsv" "$destination/"
+done
 (
     cd "$CASE"
     perl "$SA" --mode finalize \
