@@ -56,6 +56,8 @@ cat ../quartet-output/matrix.tsv
 
 Look at column `A2` in this example. The gene called `same` has a matching branch of length `9`. For `different`, that branch is absent and the entry is `NA`. [Run Fast on your own trees](fast/README.md)
 
+In our [single-thread Linux benchmark](docs/fast-timing.md), Fast read 2,275 gene trees from the 302-mammal example and wrote the branch matrix in about **4 seconds**, or the full output in **8–9 seconds**.
+
 On macOS, the Fast core also runs through [SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation) or the [Python binding](fast/docs/LIBRARY.md).
 
 [Project overview](https://wujiaqi06.github.io/#software) · [Tutorial](https://wujiaqi06.github.io/splitaligner/SplitAligner_tutorial.html) · [Animation](https://wujiaqi06.github.io/splitaligner/SplitAligner_explainer.html) · [Method paper (preprint)](https://doi.org/10.64898/2026.02.24.707838) · [Software citation](CITATION.cff)
