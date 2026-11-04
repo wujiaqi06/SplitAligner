@@ -37,6 +37,19 @@ with TemporaryDirectory() as tmp:
                 assert 'group_state' not in row
             assert row['numeric_available'] == (gene == 'shown' and scope == 'full')
             assert row['value'] == (0 if row['numeric_available'] else None)
+        if role == 'free':
+            count_tool = Path(__file__).resolve().parents[1] / 'examples/count_free_topology.py'
+            for unit, weight in [('primitive', 2), ('coordinate', 1)]:
+                data = subprocess.check_output([sys.executable, str(count_tool), str(out),
+                                                '--unit', unit], text=True)
+                reports = list(csv.DictReader(data.splitlines(), delimiter='\t'))
+                assert [r['gene_id'] for r in reports] == list(genes)
+                for r in reports:
+                    present = r['gene_id'] in ('shown', 'no_length')
+                    expected = [5 + weight, 4, 1, weight if present else 0, 0,
+                                0 if present else weight]
+                    assert [int(r[k]) for k in ('Total','Mapped','NA_struct','NA_fuse',
+                                                'NA_topo','NA_fuse_topo')] == expected
         if scope == 'full':
             with (out/'raw_states.tsv').open() as f:
                 states = list(csv.DictReader(f,delimiter='\t'))

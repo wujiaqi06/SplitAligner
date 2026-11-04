@@ -1,6 +1,6 @@
-# SplitAlignerFast 0.2.0-rc.1
+# SplitAlignerFast 0.2.0-rc.2
 
-This Linux source candidate packages the C++17 exact-bitset core, C ABI 2, streaming Newick CLI and Python binding. Production C++ and Python code comes from source revision `57308470c1ebba9194a00638573bdf1efcf47e3c`. The value in the CLI manifest identifies that implementation source. Source archive checksums identify this distribution.
+This Linux source candidate packages the C++17 exact-bitset core, C ABI 2, streaming Newick CLI and Python binding. The CLI now reports an unrecovered shared projection as `NA_fuse_topo` once per group in free full/support runs. Fused members keep raw state F. Production source: `91860d941c6b591b078fc99b02bdf7933fdba6c6`; the native core and ABI are unchanged. The value in the CLI manifest identifies that implementation source. Source archive checksums identify this distribution.
 
 - Perform exact matching with all taxon-bitset words and retain complete projection membership and original source nodes.
 - Reuse immutable plans across branch-length draws with the same topology and node numbering.

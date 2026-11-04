@@ -35,6 +35,8 @@ build/saf --reference species.nwk --genes genes.tsv --out aligned --scope full -
 
 `--scope matrix` writes primitive values and states. Use `full` to retain coverage, mapping and composite records, `support` for topology-only free-tree support, and `truth` with `--taxa` to inspect the reference restriction for each taxon set. `--unmatched-splits off` omits the two dedicated unmatched exports. Their defaults and the two event counts are described in [the output guide](docs/OUTPUT.md).
 
+For a free tree, read `composites.jsonl` in full mode to see whether each fused group was recovered. A recovered group has `group_state: "Mapped"`; an absent group has `"NA_fuse_topo"`. The member axes stay F in both cases. A missing branch length alone does not change the group state.
+
 ## Embed the core
 
 The C header is `include/splitaligner/fast_c_api.h`. It exposes ABI 2 and caller-owned output buffers. The Python binding uses the same shared library through `ctypes`.

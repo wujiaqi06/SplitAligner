@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(SplitAlignerFast VERSION 0.2.0 LANGUAGES C CXX)
-set(SAF_BUILD_COMMIT "57308470c1ebba9194a00638573bdf1efcf47e3c" CACHE STRING "Source revision recorded in CLI manifests")
+set(SAF_BUILD_COMMIT "91860d941c6b591b078fc99b02bdf7933fdba6c6" CACHE STRING "Source revision recorded in CLI manifests")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
