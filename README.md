@@ -20,6 +20,8 @@ This repository contains the SplitAligner source code, example datasets, and doc
 
 **Animation:** [Visual introduction to SplitAligner](https://wujiaqi06.github.io/splitaligner/SplitAligner_explainer.html)
 
+Start with the [Perl workflow](#quick-start), [SplitAlignerFast on Linux](#splitalignerfast-on-linux), or the [R package](https://github.com/wujiaqi06/SplitAlignerR). See the [implementation guide](docs/implementations.md) for the output each provides.
+
 Frozen base release: `v1.2.0`
 
 Phase 3 repair candidate: based on frozen commit `4337e2cb62ac24238246893e85e3d2a5a51c8a7a`; external certification pending.
@@ -392,6 +394,45 @@ cd examples/302mammal/run
 perl ../../../SplitAligner.pl --mode matrix --species ../input/speciesTree302.nwk --gene ../input/fix_tree.examples.nwk --label fix
 perl ../../../SplitAligner.pl --mode finalize_fix --fix fix.matrix_with_fuse.txt --final_label final_fix
 ```
+
+---
+
+## SplitAlignerFast on Linux
+
+Use `saf` to map one collection of gene trees onto a reference tree. It writes a gene-by-branch matrix and can also report the original edges behind each match. The same C++17 core is available through a C API and a Python binding.
+
+**Build from the repository root.** You will need CMake 3.16 or later, C and C++17 compilers, and the OpenSSL development library. Python 3.8 or later enables the binding and its tests.
+
+```bash
+cmake -S fast -B ../splitalignerfast-build -DCMAKE_BUILD_TYPE=Release
+cmake --build ../splitalignerfast-build -j2
+(cd ../splitalignerfast-build && ctest --output-on-failure)
+```
+
+**Try two gene trees.** The example uses four taxa. The gene called `same` shares the reference tree's internal split. The gene called `different` has a different internal split. Run from the repository root and choose a new output directory for each run.
+
+```bash
+../splitalignerfast-build/saf \
+  --reference fast/examples/reference.nwk \
+  --genes fast/examples/genes.tsv \
+  --scope full --role free --out ../quartet-output
+
+cat ../quartet-output/matrix.tsv
+cat ../quartet-output/raw_states.tsv
+```
+
+The four terminal branches match in both genes. On the internal reference branch, `same` has length `9` (the sum of the two root-adjacent lengths) and raw state `D`. For `different`, the same column contains `NA` and raw state `U`. Use `context.json` to find the split represented by each column. To obtain the final missingness classes from fixed and free trees, use the [paired Perl workflow](#quick-start) or [SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR).
+
+For your own data, replace the reference with a Newick tree and the genes file with a headerless TSV containing one gene ID, one tab and one Newick tree per line. Choose `--scope matrix` for the matrix and raw states, or `--scope full` for detailed mappings. Full mode writes the two dedicated unmatched-split files by default. Add `--unmatched-splits off` to omit them. [Output files and options](fast/docs/OUTPUT.md)
+
+**Reuse a mapping in Python.** This example applies two sets of branch lengths to the same topology and node order. It prints `0.75` and `1.5`.
+
+```bash
+SAF_LIBRARY="$PWD/../splitalignerfast-build/libsplitaligner_fast.so" \
+  PYTHONPATH="$PWD/fast/adapters" python3 fast/examples/reuse_mapping.py
+```
+
+See the [Fast README](fast/README.md) for local installation and the [library guide](fast/docs/LIBRARY.md) for the C API and plan lifetimes.
 
 ---
 

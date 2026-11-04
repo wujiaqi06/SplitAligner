@@ -1,0 +1,41 @@
+name: SplitAlignerFast Linux
+
+on:
+  push:
+    branches: [main]
+    tags: ['fast-v*']
+    paths:
+      - 'fast/**'
+      - '.github/workflows/fast-linux.yml'
+  pull_request:
+    paths:
+      - 'fast/**'
+      - '.github/workflows/fast-linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fast
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev python3
+      - name: Configure
+        run: cmake -S . -B "$RUNNER_TEMP/saf-build" -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build "$RUNNER_TEMP/saf-build" --parallel 2
+      - name: Run tests
+        run: ctest --test-dir "$RUNNER_TEMP/saf-build" --output-on-failure --no-tests=error
+      - name: Install and run the quartet example
+        run: |
+          cmake --install "$RUNNER_TEMP/saf-build" --prefix "$RUNNER_TEMP/saf-install"
+          ./examples/quickstart.sh "$RUNNER_TEMP/saf-install/bin/saf" "$RUNNER_TEMP/quartet-output"
