@@ -12,3 +12,5 @@ The Fast CLI processes one collection of gene trees per run. It writes raw mappi
 Fast builds independently from `fast/`. From a repository checkout, change into that directory to follow its build instructions. If you downloaded the dedicated Fast source archive, start in the extracted directory. [Fast build instructions](../fast/README.md)
 
 SplitAlignerR has its own releases, installation instructions and R documentation. Fast-backed versions of the R package ship the matching core sources and compile them during package installation. [R installation](https://github.com/wujiaqi06/SplitAlignerR#installation) · [R documentation](https://wujiaqi06.github.io/SplitAlignerR/)
+
+In the layered releases, an absent shared split is recorded once on the free group. Read `<final_label>.free.projected_groups.tsv` in Perl, `composites.jsonl` in a Fast free full/support run, or `free_fusion_groups(free)` in R. The original reference branches remain fusion members.

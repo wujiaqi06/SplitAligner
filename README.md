@@ -97,6 +97,8 @@ For example, if removing one taxon makes branches x and y project to the same sp
 
 Here `Mapped` counts displayed singletons, `NA_topo` absent singletons, and `NA_struct` branches that lost a side. The remaining two terms partition shared splits into displayed and absent. With **projected coordinates**, count each shared split once, plus one slot per structurally absent original branch. With **original branches**, weight a shared split by its number of members. In this second summary only, a member contributes to the bin for its group's outcome. Its matrix cell still reads `NA_fuse`. Both totals count matches irrespective of length. Neither is a sum of numeric matrix entries or a support denominator.
 
+Perl `finalize` writes both counts for the exact shared genes under `free_projection_accounting` in `<final_label>.finalize_manifest.json`. The count keys are `by_reference_primitive` and `by_projected_coordinate_plus_structural_absences`. Inputs without free-side v4 graph evidence cannot supply those counts. Use a fresh final output label when upgrading from a run with an older output inventory.
+
 In finalized SplitAligner **primitive** matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when its explicit coordinate state is nonstructural but the required numeric evidence is unavailable.
 
 For missing cells in the final primitive matrices, these `NA_*` labels are explanatory categories rather than generic absence codes:
@@ -733,7 +735,7 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `<label>_splits/`
   - per-gene split representations
 - `<label>_split_branch_label/`
-  - per-gene mapped branch patterns after projection to the species-tree axis; new runs also record primitive truth states and a role-neutral projected-group table
+  - per-gene mapped branch patterns plus `<label>.primitive_truth.tsv` (one state per reference branch) and `<label>.projected_groups.tsv` (each shared split once; `recovered` or `not_displayed`, before assigning a fixed/free role)
 - `<label>.matrix_no_fuse.txt`
   - primitive-branch matrix only
 - `<label>.matrix_with_fuse.txt`
