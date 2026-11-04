@@ -45,7 +45,7 @@ If topology turns away - `NA_topo`.
 
 No ghosts, no leaks:
 
-`Total = Mapped + NA_struct + NA_fuse + NA_topo.`
+`Total = Mapped + NA_struct + NA_fuse + NA_topo + NA_fuse_topo.`
 
 A quiet ledger, where every absence has a name.
 
