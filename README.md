@@ -32,7 +32,9 @@ A quiet ledger—where every absence has a name.
 
 ## Quick Start
 
-To try the five-gene example on macOS or Linux, use Perl 5 and Bash:
+The Perl reference implementation follows the same branch-by-branch steps as the paper’s proofs. It saves each gene’s splits and the reference branches they match in plain-text files, so you can trace a matrix entry back to its tree.
+
+To try the small example on macOS or Linux, use Perl 5 and Bash:
 
 ```bash
 git clone https://github.com/wujiaqi06/SplitAligner.git
@@ -42,6 +44,8 @@ head -n 3 examples/302mammal/run/final.free.na_classified.txt | cut -f1-4
 ```
 
 The preview shows two genes and three reference branches. For gene `A1BG`, branch `B1` has length `0.1809315089`. For your own data, see the [input formats and commands](docs/workflow-reference.md#input-formats).
+
+In the [302-mammal benchmark](docs/fast-timing.md#perl-paired-workflow), Perl processed both the fixed and free trees for each of 2,275 genes and calculated branch support in **9 min 52 s**, using a single thread on an Apple M3 Pro.
 
 ## SplitAlignerFast on Linux
 
@@ -56,7 +60,7 @@ cat ../quartet-output/matrix.tsv
 
 Look at column `A2` in this example. The gene called `same` has a matching branch of length `9`. For `different`, that branch is absent and the entry is `NA`. [Run Fast on your own trees](fast/README.md)
 
-In our [single-thread Linux benchmark](docs/fast-timing.md), Fast read 2,275 gene trees from the 302-mammal example and wrote the branch matrix in about **4 seconds**, or the full output in **8–9 seconds**.
+In our [single-thread Linux benchmark](docs/fast-timing.md#fast-one-tree-set), Fast read one set of 2,275 gene trees from the 302-mammal example and wrote the branch matrix in about **4 seconds**, or the full output in **8–9 seconds**.
 
 On macOS, the Fast core also runs through [SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation) or the [Python binding](fast/docs/LIBRARY.md).
 
