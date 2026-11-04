@@ -18,11 +18,12 @@ A fused branch is a projected branch pattern produced when multiple original spe
 
 ---
 
-## 4. What is the difference between `NA_struct`, `NA_fuse`, and `NA_topo`?
+## 4. Which missingness classes apply to branches and which to groups?
 
 - `NA_struct`: structural absence after projection
-- `NA_fuse`: signal exists only through a fused branch
+- `NA_fuse`: the reference branch belongs to a shared projection on this taxon set
 - `NA_topo`: the branch has numeric fixed-side primitive evidence but is absent in the free-topology gene tree
+- `NA_fuse_topo`: the free tree does not display the shared split. Recorded once per group; its members remain `NA_fuse`.
 
 ---
 
@@ -62,13 +63,13 @@ Gene identifiers are preserved exactly and must be unique. SplitAligner uses inj
 
 ## 9. What happens when an internal branch projects to a `1|k` split?
 
-It is not emitted as an independently observable primitive internal branch. However, it is retained for fused-path bookkeeping. If another branch projects to the same reduced split and the fused coordinate carries numeric signal, the primitive branch is classified as `NA_fuse`.
+It is not emitted as an independently observable primitive internal branch. However, it is retained for fused-path bookkeeping. If another branch projects to the same reduced split, the primitive branch is classified as `NA_fuse`.
 
 ---
 
 ## 10. Why can residual generic `NA` remain after `finalize`?
 
-Residual `NA` can remain whenever the explicit state is nonstructural but the evidence required for a more specific label is unavailable. Examples include a directly mapped branch with no branch length (`D`), a fused mapping with no numeric composite (`F`), or a projected-unmapped free cell (`U`) without qualifying finite numeric fixed-side evidence in state `D`.
+Residual `NA` can remain whenever the explicit state is nonstructural but the evidence required for a more specific label is unavailable. Examples include a directly mapped branch with no branch length (`D`), or a projected-unmapped free cell (`U`) without qualifying finite numeric fixed-side evidence in state `D`.
 
 ---
 

@@ -11,8 +11,9 @@ It defines branch identity on a fixed species-tree backbone using canonicalized 
 SplitAligner explicitly distinguishes biologically meaningful forms of missingness:
 
 - `NA_struct`: a projected side disappears after taxon pruning, so the branch has no projected identity
-- `NA_fuse`: signal is represented on a fused branch rather than on a primitive branch
+- `NA_fuse`: two or more reference branches share one projected split; each member retains this state
 - `NA_topo`: the projected branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree
+- `NA_fuse_topo` (group output): the free gene tree does not display the shared split
 
 This repository contains the SplitAligner source code, example datasets, and documentation needed to reproduce the core branch-mapping workflow.
 
@@ -84,12 +85,24 @@ In practice, SplitAligner asks a simple question for each gene and each species-
 
 ## Definition Summary
 
-In finalized SplitAligner matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when its explicit coordinate state is nonstructural but the required numeric evidence is unavailable.
+**Reference branches and projected groups answer different questions.** First restrict both sides of each reference split to the taxa observed in the gene. An empty side means `NA_struct`. If several branches give the same nonempty split, each member is `NA_fuse`. This reference-layer result is fixed by the taxon set alone.
 
-For missing cells in the final matrices, these `NA_*` labels are explanatory categories rather than generic absence codes:
+Next look for each surviving split on the free gene tree. A singleton can match or be absent. A fused group can also match or be absent. If it matches, record its length **once**, on the group, when available. If it is absent, write **`NA_fuse_topo` once on the group**. In both cases every member remains `NA_fuse`. An exact split may be absent on an unresolved tree; absence does not by itself prove a conflicting resolution. A displayed split without a length is still a topological match.
+
+For example, if removing one taxon makes branches x and y project to the same split, then a gene can supply one length for {x, y}, or no matching edge for {x, y}. Neither result assigns separate lengths to x and y.
+
+**Counting topology outcomes.** The line in the Introduction is the historical primitive-branch description. For the layered five-way summary, specify the counting unit:
+
+`Total = Mapped + NA_struct + NA_fuse + NA_topo + NA_fuse_topo`
+
+Here `Mapped` counts displayed singletons, `NA_topo` absent singletons, and `NA_struct` branches that lost a side. The remaining two terms partition shared splits into displayed and absent. With **projected coordinates**, count each shared split once, plus one slot per structurally absent original branch. With **original branches**, weight a shared split by its number of members. In this second summary only, a member contributes to the bin for its group's outcome. Its matrix cell still reads `NA_fuse`. Both totals count matches irrespective of length. Neither is a sum of numeric matrix entries or a support denominator.
+
+In finalized SplitAligner **primitive** matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when its explicit coordinate state is nonstructural but the required numeric evidence is unavailable.
+
+For missing cells in the final primitive matrices, these `NA_*` labels are explanatory categories rather than generic absence codes:
 
 - `NA_struct`: a projected side disappears entirely, so the branch has no projected identity on that gene
-- `NA_fuse`: the branch is not retained as an independently observable primitive branch because its numeric signal is carried by a fused coordinate
+- `NA_fuse`: the branch is not independently observable because it belongs to a shared projection, regardless of whether that projection is displayed or has a length
 - `NA_topo`: the branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree
 
 More explicitly, the current implementation distinguishes the following projection outcomes:
@@ -97,11 +110,11 @@ More explicitly, the current implementation distinguishes the following projecti
 - empty projected side
   - no projected identity remains, so the primitive branch is structurally missing
 - internal `>=2|>=2`
-  - the projected split remains an independently observable primitive internal branch
+  - a unique projected split can be an independently observable primitive internal branch; a repeated one is a shared coordinate
 - internal `1|k`
   - the projected split is not independently observable as a primitive internal branch, but it is retained for fused-path bookkeeping
-- numeric fused coordinate
-  - primitive branches explained by that fused coordinate are classified as `NA_fuse`
+- shared projected coordinate
+  - all members are `NA_fuse`; recoverable length and topology are recorded on the group
 
 This design allows absence states to be analyzed explicitly instead of being collapsed into a single undifferentiated `NA`.
 
@@ -135,7 +148,7 @@ Similarly, concordance-style summaries are often used to count supporting and co
 
 - Defines branch identity in projected split space rather than by naive branch-to-branch comparison
 - Representation-invariant biological branch identity: coordinates are keyed by canonical unrooted splits rather than display-root or positional node identities
-- Distinguishes three biologically meaningful missingness states: `NA_struct`, `NA_fuse`, and `NA_topo`
+- Distinguishes primitive `NA_struct`, `NA_fuse`, and `NA_topo`, and identifies an absent shared split as `NA_fuse_topo` on its group
 - Produces standardized gene-by-branch matrices for both fixed-topology and free-topology gene trees
 - Makes fused branches explicit instead of treating projection-induced ambiguity as generic missing data
 - Computes branch-wise concordance (`Support`) on the species-tree backbone
@@ -154,6 +167,7 @@ flowchart LR
     E --> F["finalize / finalize_fix"]
     F --> G["numeric / NA_struct / NA_fuse / NA_topo / residual NA"]
     F --> H["Support table + annotated tree"]
+    F --> I["Free fused groups: recovered or NA_fuse_topo"]
 ```
 
 ---
@@ -164,7 +178,7 @@ flowchart LR
 - Explicit handling of missing taxa during per-gene projection
 - Recognition of fused branch patterns after taxon pruning
 - Matrix generation for fixed-topology and free-topology gene-tree sets
-- Evidence-based classification of missing cells into `NA_fuse`, `NA_struct`, and `NA_topo`, with residual `NA` retained when fixed-side numeric evidence is unavailable
+- Separate primitive missingness, group recovery, and numeric availability; retain residual `NA` when evidence required for a numeric comparison is unavailable
 - Optional branch-wise `Support` summary and annotated species tree at the end of `finalize`
 - Reproducible example workflow included in `examples/302mammal/`
 
@@ -401,7 +415,7 @@ perl ../../../SplitAligner.pl --mode finalize_fix --fix fix.matrix_with_fuse.txt
 
 Use `saf` to map one collection of gene trees onto a reference tree. It writes a gene-by-branch matrix and can also report the original edges behind each match. The same C++17 core is available through a C API and a Python binding.
 
-The standalone Linux source archive for this candidate is `SplitAlignerFast-0.2.0-rc.1.tar.gz`. If you have that archive, follow the README in the extracted directory. The commands below use a checkout of the full repository.
+The standalone Linux source archive for this candidate is `SplitAlignerFast-0.2.0-rc.2.tar.gz`. If you have that archive, follow the README in the extracted directory. The commands below use a checkout of the full repository.
 
 **Build from the repository root.** You will need CMake 3.16 or later, C and C++17 compilers, and the OpenSSL development library. Python 3.8 or later enables the binding and its tests.
 
@@ -425,7 +439,9 @@ cat ../quartet-output/raw_states.tsv
 
 The four terminal branches match in both genes. On the internal reference branch, `same` has length `9` (the sum of the two root-adjacent lengths) and raw state `D`. For `different`, the same column contains `NA` and raw state `U`. Use `context.json` to find the split represented by each column. To obtain the final missingness classes from fixed and free trees, use the [paired Perl workflow](#quick-start) or [SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR).
 
-For your own data, replace the reference with a Newick tree and the genes file with a headerless TSV containing one gene ID, one tab and one Newick tree per line. Choose `--scope matrix` for the matrix and raw states, or `--scope full` for detailed mappings. Full mode writes the two dedicated unmatched-split files by default. Add `--unmatched-splits off` to omit them. [Output files and options](fast/docs/OUTPUT.md)
+For your own data, replace the reference with a Newick tree and the genes file with a headerless TSV containing one gene ID, one tab and one Newick tree per line. Choose `--scope matrix` for the matrix and raw states, or `--scope full` for detailed mappings. Full mode writes the two dedicated unmatched-split files by default. In a free run, `composites.jsonl` reports `group_state` (`Mapped` or `NA_fuse_topo`), `members`, and a separate `numeric_available` flag. The member columns in `raw_states.tsv` remain F. Add `--unmatched-splits off` to omit the two unmatched files and keep this group ledger. [Output files and options](fast/docs/OUTPUT.md)
+
+For a five-way count, run `python3 fast/examples/count_free_topology.py ../quartet-output --unit coordinate`. Use `--unit primitive` to count original branches. Each output row names the gene and the unit.
 
 **Reuse a mapping in Python.** This example applies two sets of branch lengths to the same topology and node order. It prints `0.75` and `1.5`.
 
@@ -450,7 +466,7 @@ Final matrices are gene-by-branch tables indexed by the fixed species-tree branc
 
 - Numeric values indicate mapped branch-associated values for that gene and branch.
 - `NA_struct` means a projected side disappeared, so the branch has no projected identity for that gene.
-- `NA_fuse` means the branch is not represented as a primitive branch because its signal is captured by a fused branch.
+- `NA_fuse` means the branch is not represented as a primitive branch because it shares a projected split with at least one other reference branch.
 - `NA_topo` means the branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree.
 
 ---
@@ -471,12 +487,13 @@ SplitAligner runs in two major stages.
 
 ### Stage 2: `finalize`
 
-1. Mark primitive-branch `NA` cells that are explained by numeric fused-branch signal as `NA_fuse`
+1. Use the verified projection evidence from new matrix runs to mark each fused member `NA_fuse` on both sides, whether or not its group supplies a length
 2. Compare fixed-topology and free-topology matrices on shared genes
 3. Classify each side from its explicit coordinate state: generic `NA` becomes `NA_struct` only for state `S`, while free-side `NA` becomes `NA_topo` only for free state `U` paired with finite numeric fixed-side primitive evidence in state `D`
-4. Optionally compute branch-wise `Support` and write an annotated species tree
+4. Write the shared genes’ free-group outcomes. A group without a matching split gets `NA_fuse_topo` once.
+5. Optionally compute branch-wise `Support` and write an annotated species tree
 
-Residual generic `NA` is retained for nonstructural `D`, `F`, or `U` states when the evidence required for a more specific classification is unavailable.
+The paired numeric matrix can still contain residual `NA`, for example when a mapped singleton has no branch length or a fixed primitive lacks evidence required for the paired `NA_topo` call. Legacy matrix runs lack the new group evidence; rerun `matrix` from trees to obtain the group diagnosis.
 
 Before classification begins, `finalize` locates the FREE and FIX run manifests and requires their complete ordered canonical ledgers to match. A missing manifest, matrix-hash mismatch, ledger mismatch, or mismatched Support tree is fatal before final outputs are created.
 
@@ -581,7 +598,7 @@ Main outputs:
 
 The final classification step is defined only for genes shared between the fixed-topology and free-topology inputs. If no shared genes are found, SplitAligner stops with an error.
 
-`finalize` has no implicit legacy/header-only fallback. By default it locates `<label>.run_manifest.json` beside each `<label>.matrix_with_fuse.txt`, requires the v3 manifest and its bound primitive-state sidecar, verifies matrix and state hashes, validates row/column identity, and compares the exact ordered canonical coordinate mapping. Matching textual headers such as `B1...Bn` are not sufficient when those aliases bind to different splits. Earlier v2 matrix runs must be regenerated before finalization.
+`finalize` has no implicit legacy/header-only fallback. By default it locates `<label>.run_manifest.json` beside each `<label>.matrix_with_fuse.txt`, verifies the run manifest and its bound primitive-state sidecar (new runs use v4 with two additional graph tables; v3 inputs retain legacy fusion behavior), verifies matrix and state hashes, validates row/column identity, and compares the exact ordered canonical coordinate mapping. Matching textual headers such as `B1...Bn` are not sufficient when those aliases bind to different splits. Earlier v2 matrix runs must be regenerated before finalization.
 
 When `--species_tree` is provided, SplitAligner also computes a branch-wise concordance score, `Support(b)`, on the species-tree backbone. In the current implementation, `Support(b)` is defined on genes shared between the fixed-topology and free-topology inputs as:
 
@@ -716,7 +733,7 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `<label>_splits/`
   - per-gene split representations
 - `<label>_split_branch_label/`
-  - per-gene mapped branch patterns after projection to the species-tree axis
+  - per-gene mapped branch patterns after projection to the species-tree axis; new runs also record primitive truth states and a role-neutral projected-group table
 - `<label>.matrix_no_fuse.txt`
   - primitive-branch matrix only
 - `<label>.matrix_with_fuse.txt`
@@ -738,6 +755,8 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
   - fixed-topology matrix after final NA classification
 - `<final_label>.free.na_classified.txt`
   - free-topology matrix after final NA classification
+- `<final_label>.free.projected_groups.tsv` (new evidence-bearing runs)
+  - one row per shared gene and fused group: projected split, member IDs, recovery status and length if available
 - `<final_label>.support_b.txt`
   - branch-wise `Support` summary with columns `branch_id`, `branch_type`, `n_shared_genes`, `n_fix_non_na`, `n_free_non_na`, `support_percent`, and `discordance_percent`
 - `<species_prefix>.support_b.nwk`
@@ -754,9 +773,11 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `NA_struct`
   - a projected side disappears after projection, so the branch has no projected identity and is not evaluable for that gene
 - `NA_topo`
-  - the projected branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree, consistent with topology-induced discordance
+  - the projected branch has numeric fixed-side primitive evidence but is absent from the free-topology gene tree
+- `NA_fuse_topo` (free group table)
+  - a nonempty shared split is absent from this gene tree. The original branch members still read `NA_fuse`.
 
-Residual generic `NA` may remain in `finalize` outputs when the fixed baseline itself lacks numeric primitive evidence, for example when the fixed-side state is `NA_fuse` or `NA_struct`.
+Residual generic `NA` may remain in the numeric matrices when evidence required by the paired workflow is unavailable. Missing or zero length is not evidence of topology loss.
 
 These categories are intended to prevent biologically distinct sources of missingness from being conflated in downstream analyses.
 
