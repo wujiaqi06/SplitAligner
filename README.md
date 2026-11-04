@@ -401,6 +401,8 @@ perl ../../../SplitAligner.pl --mode finalize_fix --fix fix.matrix_with_fuse.txt
 
 Use `saf` to map one collection of gene trees onto a reference tree. It writes a gene-by-branch matrix and can also report the original edges behind each match. The same C++17 core is available through a C API and a Python binding.
 
+The standalone Linux source archive for this candidate is `SplitAlignerFast-0.2.0-rc.1.tar.gz`. If you have that archive, follow the README in the extracted directory. The commands below use a checkout of the full repository.
+
 **Build from the repository root.** You will need CMake 3.16 or later, C and C++17 compilers, and the OpenSSL development library. Python 3.8 or later enables the binding and its tests.
 
 ```bash
