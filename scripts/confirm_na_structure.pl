@@ -170,13 +170,9 @@ if (@gene_id_alias_matches) {
         ". Please harmonize gene IDs in the input gene-tree files before rerunning SplitAligner.\n";
 }
 
-my %support_stats = initialize_support_stats(
-    fix_rows     => \%fix_row,
-    free_rows    => \%free_row,
-    fix_branches => \@fix_branches,
-    free_branches => \@free_branches,
-    shared_genes => \@shared_genes,
-);
+my %support_stats = map {
+    $_ => { n_shared_genes => scalar(@shared_genes), n_fix_non_na => 0, n_free_non_na => 0 }
+} @fix_primitive_branches;
 
 my %fix_state_index = map { $fix_state->{axis}[$_] => $_ } 0 .. $#{$fix_state->{axis}};
 my %free_state_index = map { $free_state->{axis}[$_] => $_ } 0 .. $#{$free_state->{axis}};
@@ -204,8 +200,16 @@ for my $gene (@shared_genes) {
 
         my $fix_code = $fix_states[ $fix_state_index{$b} ];
         my $free_code = $free_states[ $free_state_index{$b} ];
+        my $free_is_fused = $free_truth && $free_truth->{rows}{$gene}[ $free_state_index{$b} ] eq 'NA_fuse';
+        # Validated group evidence binds an absent shared projection to raw U.
+        # A different FIX taxon mask may still give this member a finite length.
+        my $excluded_from_support = defined($free_groups_path) && $free_is_fused && $free_code eq 'U';
+        unless ($excluded_from_support) {
+            $support_stats{$b}{n_fix_non_na}++ if is_numeric_branch_evidence($fix{$b});
+            $support_stats{$b}{n_free_non_na}++ if is_numeric_branch_evidence($free{$b});
+        }
         $fix{$b} = 'NA_fuse' if $fix_truth && $fix_truth->{rows}{$gene}[ $fix_state_index{$b} ] eq 'NA_fuse';
-        $free{$b} = 'NA_fuse' if $free_truth && $free_truth->{rows}{$gene}[ $free_state_index{$b} ] eq 'NA_fuse';
+        $free{$b} = 'NA_fuse' if $free_is_fused;
         $fix{$b} = 'NA_struct' if $fix{$b} eq 'NA' && $fix_code eq 'S';
 
         if ($free{$b} eq 'NA' && $free_code eq 'S') {
@@ -480,48 +484,6 @@ sub support_label {
     my ($branch_id, $support_ref) = @_;
     my $support = exists $support_ref->{$branch_id} ? $support_ref->{$branch_id} : '0.0000000000';
     return $support;
-}
-
-sub initialize_support_stats {
-    my %arg = @_;
-
-    my $fix_rows_ref      = $arg{fix_rows};
-    my $free_rows_ref     = $arg{free_rows};
-    my $fix_branches_ref  = $arg{fix_branches};
-    my $free_branches_ref = $arg{free_branches};
-    my $shared_genes_ref  = $arg{shared_genes};
-
-    my %stats;
-    for my $b (@{$fix_branches_ref}) {
-        $stats{$b} = {
-            n_shared_genes => scalar(@{$shared_genes_ref}),
-            n_fix_non_na => 0,
-            n_free_non_na => 0,
-        };
-    }
-
-    my %free_index = map { $free_branches_ref->[$_] => $_ } 0 .. $#{$free_branches_ref};
-
-    for my $gene (@{$shared_genes_ref}) {
-        next unless exists $fix_rows_ref->{$gene} && exists $free_rows_ref->{$gene};
-
-        my @fix_vals  = split(/\t/, $fix_rows_ref->{$gene}, -1);
-        my @free_vals = split(/\t/, $free_rows_ref->{$gene}, -1);
-
-        for my $i (0 .. $#{$fix_branches_ref}) {
-            my $branch    = $fix_branches_ref->[$i];
-            my $fix_value = defined $fix_vals[$i] ? $fix_vals[$i] : 'NA';
-
-            $stats{$branch}{n_fix_non_na}++ if is_numeric_branch_evidence($fix_value);
-
-            next unless exists $free_index{$branch};
-            my $free_idx   = $free_index{$branch};
-            my $free_value = defined $free_vals[$free_idx] ? $free_vals[$free_idx] : 'NA';
-            $stats{$branch}{n_free_non_na}++ if is_numeric_branch_evidence($free_value);
-        }
-    }
-
-    return %stats;
 }
 
 sub detect_hyphen_underscore_aliases {

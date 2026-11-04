@@ -112,7 +112,37 @@ def run(d):
     assert not (d / "incomplete.finalize_manifest.json").exists()
 
 
+def support_with_different_masks(d):
+    ref = "((A:1,B:1):1,C:1,(D:1,(E:1,F:1):1):1);"
+    (d / "species.nwk").write_text(ref + "\n")
+    # 'joint' loses C and the fused AB|DEF split. 'singleton' keeps every
+    # taxon, displays both AB and ABC, and loses the separate EF split.
+    free = {"joint": "((A:1,D:1):1,B:1,(E:1,F:1):1);",
+            "singleton": "((A:1,B:1):1,C:1,(E:1,(D:1,F:1):1):1);"}
+    for role, trees in [("fix", {g: ref for g in free}), ("free", free)]:
+        path = d / (role + ".nwk")
+        path.write_text("".join(g + tree + "\n" for g, tree in trees.items()))
+        cli(d, "--mode", "matrix", "--species", "species.nwk", "--gene", path.name, "--label", role)
+    cli(d, "--mode", "finalize", "--free", "free.matrix_with_fuse.txt", "--fix", "fix.matrix_with_fuse.txt",
+        "--species_tree", "species_tree.forSplit.nwk", "--final_label", "pair")
+    group, = table(d / "pair.free.projected_groups.tsv")
+    assert (group["gene"], group["status"]) == ("joint", "NA_fuse_topo")
+    support = {r["branch_id"]: r for r in table(d / "pair.support_b.txt")}
+    def counts(branch):
+        row = support[branch]
+        return tuple(int(row[key]) for key in ("n_free_non_na", "n_fix_non_na", "n_shared_genes"))
+    members = group["members"].split("|")
+    assert len(members) == 2 and all(counts(m) == (1, 1, 2) for m in members)
+    # The singleton miss contributes to the denominator, while the same
+    # reference branch remains an ordinary displayed singleton in 'joint'.
+    by_gene = {r["gene"]: r for r in table(d / "pair.free.na_classified.txt")}
+    absent, = (b for b, value in by_gene["singleton"].items() if value == "NA_topo")
+    assert float(by_gene["joint"][absent]) == 1 and counts(absent) == (1, 2, 2)
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         run(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        support_with_different_masks(Path(tmp))
     print("PASS: paired projected groups, member truth, numeric availability, legacy and damaged inputs")
