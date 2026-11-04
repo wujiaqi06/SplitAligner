@@ -14,3 +14,5 @@ Fast builds independently from `fast/`. From a repository checkout, change into 
 SplitAlignerR has its own releases, installation instructions and R documentation. Fast-backed versions of the R package ship the matching core sources and compile them during package installation. [R installation](https://github.com/wujiaqi06/SplitAlignerR#installation) · [R documentation](https://wujiaqi06.github.io/SplitAlignerR/)
 
 In the layered releases, an absent shared split is recorded once on the free group. Read `<final_label>.free.projected_groups.tsv` in Perl, `composites.jsonl` in a Fast free full/support run, or `free_fusion_groups(free)` in R. The original reference branches remain fusion members.
+
+For the five-term topology total, read `free_projection_accounting` in the Perl finalize manifest, run the [Fast counting example](../fast/examples/count_free_topology.py), or use `count_free_topology(free, unit = "coordinate")` in R. Choose `primitive` to weight each group by its number of original members.
