@@ -4,7 +4,13 @@
   <img src="assets/SplitAligner_logo.png" alt="SplitAligner logo" width="720">
 </p>
 
-<a name="introduction"></a>
+SplitAligner compares each gene tree with a reference species tree and writes a **gene × branch table** of branch lengths. When a gene lacks species, two reference branches can correspond to the same gene-tree branch. SplitAligner records that length once for the group.
+
+The identity in the poem counts each original reference branch once per gene. Each fusion member counts as `NA_fuse`. The group table records `NA_fuse_topo` if the shared split is absent from the free tree.
+
+[Perl quick start](#quick-start) · [Run Fast on Linux](#splitalignerfast-on-linux) · [Use R](https://github.com/wujiaqi06/SplitAlignerR#installation)
+
+## Introduction
 
 > On a fixed species-tree spine,\
 > we ask one thing: does branch *b* still hold?
@@ -17,12 +23,6 @@
 > No ghosts, no leaks:\
 > **Total = Mapped + NA_struct + NA_fuse + NA_topo**.\
 > A quiet ledger—where every absence has a name.
-
-SplitAligner compares each gene tree with a reference species tree and writes a **gene × branch table** of branch lengths. When a gene lacks species, two reference branches can correspond to the same gene-tree branch. SplitAligner records that length once for the group.
-
-The identity in the poem counts each original reference branch once per gene. Each fusion member counts as `NA_fuse`. The group table records `NA_fuse_topo` if the shared split is absent from the free tree.
-
-[Perl quick start](#quick-start) · [Run Fast on Linux](#splitalignerfast-on-linux) · [Use R](https://github.com/wujiaqi06/SplitAlignerR#installation)
 
 ## Quick Start
 
