@@ -97,7 +97,7 @@ inline std::string bits_hex(const std::vector<uint64_t>&w){std::ostringstream s;
 inline bool missing(const std::string&s){std::string u;for(unsigned char c:s)u+=c>='a'&&c<='z'?char(c-32):char(c);if(u=="NA"||u=="N/A"||u=="."||u=="?"||u=="NULL"||u=="NONE")return true;if(!u.empty()&&(u[0]=='+'||u[0]=='-'))u.erase(u.begin());return u=="NAN"||u=="INF"||u=="INFINITY";}
 inline bool decimal(const std::string&s){size_t i=0;if(i<s.size()&&(s[i]=='+'||s[i]=='-'))++i;size_t d=0;while(i<s.size()&&s[i]>='0'&&s[i]<='9'){++i;++d;}if(i<s.size()&&s[i]=='.'){++i;while(i<s.size()&&s[i]>='0'&&s[i]<='9'){++i;++d;}}if(!d)return false;if(i<s.size()&&(s[i]=='e'||s[i]=='E')){++i;if(i<s.size()&&(s[i]=='+'||s[i]=='-'))++i;size_t start=i;while(i<s.size()&&s[i]>='0'&&s[i]<='9')++i;if(i==start)return false;}return i==s.size();}
 inline double number(const std::string&s){struct Locale{locale_t p=newlocale(LC_NUMERIC_MASK,"C",nullptr);~Locale(){if(p)freelocale(p);}};static Locale loc;if(!loc.p)throw std::runtime_error("C locale unavailable");char*end=nullptr;double v=strtod_l(s.c_str(),&end,loc.p);if(end!=s.data()+s.size()||!std::isfinite(v))throw std::runtime_error("numeric range: "+s);bool nz=false;for(char c:s){if(c=='e'||c=='E')break;if(c>='1'&&c<='9')nz=true;}if(v==0&&nz)throw std::runtime_error("numeric underflow to zero: "+s);return v;}
-struct Node{int64_t parent=-1;std::vector<size_t> children;std::string label,length;std::vector<std::string> comments;bool has_length=false;};
+struct Node{int64_t parent=-1;std::vector<size_t> children;std::string label,length;std::vector<std::string> comments;bool has_length=false;bool tip_was_quoted=false;};
 struct Tree{std::vector<Node> nodes;size_t root=0;};
 class Parser {
  const std::string&s;size_t p=0;Tree t;
@@ -106,7 +106,7 @@ class Parser {
  size_t subtree(int64_t parent,size_t depth){
   if(depth>4096)throw std::runtime_error("Newick nesting exceeds supported depth 4096");std::vector<std::string> pre;skip(pre);if(p==s.size())throw std::runtime_error("missing subtree");size_t v=t.nodes.size();t.nodes.emplace_back();t.nodes[v].parent=parent;t.nodes[v].comments=std::move(pre);
   if(s[p]=='('){++p;for(;;){size_t c=subtree((int64_t)v,depth+1);t.nodes[v].children.push_back(c);skip(t.nodes[v].comments);if(p==s.size())throw std::runtime_error("missing right parenthesis");if(s[p]==','){++p;continue;}if(s[p]==')'){++p;break;}throw std::runtime_error("expected comma or closing parenthesis");}if(t.nodes[v].children.size()<2)throw std::runtime_error("unary/empty internal node");skip(t.nodes[v].comments);if(p<s.size()&&std::string(":,);").find(s[p])==std::string::npos)t.nodes[v].label=label();}
-  else{if(std::string(",):;]").find(s[p])!=std::string::npos)throw std::runtime_error("empty or invalid subtree");t.nodes[v].label=label();}
+  else{if(std::string(",):;]").find(s[p])!=std::string::npos)throw std::runtime_error("empty or invalid subtree");t.nodes[v].tip_was_quoted=s[p]=='\'';t.nodes[v].label=label();}
   skip(t.nodes[v].comments);if(p<s.size()&&s[p]==':'){++p;skip(t.nodes[v].comments);size_t start=p;while(p<s.size()&&!space(s[p])&&std::string("(),:;[]").find(s[p])==std::string::npos)++p;auto token=s.substr(start,p-start);if(!missing(token)&&!decimal(token))throw std::runtime_error("invalid length token: "+token);t.nodes[v].length=token;t.nodes[v].has_length=true;skip(t.nodes[v].comments);}
   if(p<s.size()&&std::string(",);").find(s[p])==std::string::npos)throw std::runtime_error("invalid token order or duplicate length");return v;
  }
