@@ -12,15 +12,15 @@ Next look for each surviving split on the free gene tree. A singleton can match 
 
 For example, if removing one taxon makes branches x and y project to the same split, then a gene can supply one length for {x, y}, or no matching edge for {x, y}. Neither result assigns separate lengths to x and y.
 
-**Counting topology outcomes.** The five-term inventory accounts for every reference branch on a gene, including branches that cannot be scored for recovery.
+**Counting original reference branches.** Each original branch counts once per gene.
 
-`Total = Mapped + NA_struct + NA_fuse + NA_topo + NA_fuse_topo`
+`Total = Mapped + NA_struct + NA_fuse + NA_topo`
 
-On the original branch axis, each branch contributes once. `Mapped` counts displayed singletons, `NA_topo` counts absent singletons, and `NA_struct` counts branches that lost a side. Members of a shared split contribute to `NA_fuse` when the split is displayed or `NA_fuse_topo` when it is absent. Their primitive matrix cells retain `NA_fuse`. For an inventory of projected coordinates, count each shared split once and keep one slot per structurally absent original branch.
+A displayed singleton counts as `Mapped`, including when its length is unavailable. An absent singleton counts as `NA_topo`. A branch that loses a side counts as `NA_struct`. Every member of a fusion counts as `NA_fuse`, whether or not the free tree displays the shared split. The group table records an absent shared split as `NA_fuse_topo`.
 
-**Branch recovery uses a separate denominator.** A member of an `NA_fuse_topo` group has no individually measurable branch in the reference projection and no recovered primitive branch on the free tree. For that gene, add **zero to the numerator and zero to the denominator** of primitive-branch support. Keep the group in the five-term inventory. By comparison, a singleton with finite fixed-side evidence whose split is absent from the free tree (`NA_topo`) contributes one to the Perl support denominator and zero to its numerator.
+**Branch recovery uses a separate denominator.** A member of an `NA_fuse_topo` group has no individually measurable branch in the reference projection and no recovered primitive branch on the free tree. For that gene, add **zero to the numerator and zero to the denominator** of primitive-branch support. By comparison, a singleton with finite fixed-side evidence whose split is absent from the free tree (`NA_topo`) contributes one to the Perl support denominator and zero to its numerator.
 
-Perl `finalize` writes both counts for the exact shared genes under `free_projection_accounting` in `<final_label>.finalize_manifest.json`. The count keys are `by_reference_primitive` and `by_projected_coordinate_plus_structural_absences`. Inputs without free-side v4 graph evidence cannot supply those counts. Use a fresh final output label when upgrading from a run with an older output inventory.
+Perl `finalize` also writes a separate summary of group recovery for the shared genes under `free_projection_accounting` in `<final_label>.finalize_manifest.json`. Alongside singleton and structural outcomes, `by_reference_primitive` weights each group outcome by the number of members, while `by_projected_coordinate_plus_structural_absences` counts each group once. Inputs without free-side v4 graph evidence cannot supply those counts. Use a fresh final output label when upgrading from a run with an older output inventory.
 
 In finalized SplitAligner **primitive** matrices, each gene-branch cell is interpreted as numeric, explicitly classified as `NA_struct`, `NA_fuse`, or `NA_topo`, or intentionally retained as residual generic `NA` when its explicit coordinate state is nonstructural but the required numeric evidence is unavailable.
 
@@ -535,6 +535,8 @@ Accepted examples:
 ```
 
 ### Gene trees
+
+Supply gene trees with branch lengths for numerical output. A matched split with an omitted length still counts as recovered. An explicit zero contributes zero. For an unavailable length, inspect the primitive truth record together with the original gene tree. Perl rejects literal `:NA`, `:NaN` and `:Inf` tokens.
 
 - Format: Newick, one record per line
 - Each line begins with a gene identifier followed immediately by a tree

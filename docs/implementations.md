@@ -15,4 +15,4 @@ SplitAlignerR has its own releases, installation instructions and R documentatio
 
 In the layered releases, an absent shared split is recorded once on the free group. Read `<final_label>.free.projected_groups.tsv` in Perl, `composites.jsonl` in a Fast free full/support run, or `free_fusion_groups(free)` in R. The original reference branches remain fusion members.
 
-For the five-term topology total, read `free_projection_accounting` in the Perl finalize manifest, run the [Fast counting example](../fast/examples/count_free_topology.py), or use `count_free_topology(free, unit = "coordinate")` in R. Choose `primitive` to weight each group by its number of original members.
+For a separate summary that includes fusion-group recovery, read `free_projection_accounting` in the Perl finalize manifest, run the [Fast counting example](../fast/examples/count_free_topology.py), or use `count_free_topology(free, unit = "coordinate")` in R. Choose `primitive` to weight each group by its number of original members.
