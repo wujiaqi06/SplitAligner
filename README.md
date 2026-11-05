@@ -8,7 +8,7 @@ SplitAligner compares each gene tree with a reference species tree and writes a 
 
 The identity in the poem counts each original reference branch once per gene. Each fusion member counts as `NA_fuse`. The group table records `NA_fuse_topo` if the shared split is absent from the free tree.
 
-[Perl quick start](#quick-start) · [Run Fast on Linux](#splitalignerfast-on-linux) · [Use R](https://github.com/wujiaqi06/SplitAlignerR#installation)
+[Perl quick start](#quick-start) · [Run Fast on Linux](#splitalignerfast-on-linux) · [Use SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation)
 
 ## Introduction
 
