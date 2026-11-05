@@ -30,7 +30,7 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev python3
       - name: Configure
-        run: cmake -S . -B "$RUNNER_TEMP/saf-build" -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B "$RUNNER_TEMP/saf-build" -DCMAKE_BUILD_TYPE=Release -DSAF_BUILD_COMMIT="$(git rev-parse HEAD)"
       - name: Build
         run: cmake --build "$RUNNER_TEMP/saf-build" --parallel 2
       - name: Run tests

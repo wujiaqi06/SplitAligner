@@ -7,6 +7,7 @@ int main(void) {
  saf_reference *r=NULL;saf_coverage *c=NULL;saf_mapping *m=NULL;saf_support *s=NULL;
  uint64_t mask=3;double lengths[3]={NAN,0.25,0.5},value[2]={-9,-77};uint8_t valid[2]={0,99};
  saf_value_buffer request={value,valid,2},skip={NULL,NULL,0};size_t n=0,source[2];saf_support_count count;
+ REQUIRE(saf_reference_create(SIZE_MAX/4,"impossible reference",parent,taxon,3,&r)==SAF_INVALID_ARGUMENT && r==NULL);
  REQUIRE(saf_reference_create(2,"C-smoke:0=a;1=b",parent,taxon,3,&r)==SAF_OK);
  REQUIRE(saf_coverage_create(r,&mask,1,&c)==SAF_OK);
  REQUIRE(saf_mapping_create(c,parent,taxon,3,&m)==SAF_OK);

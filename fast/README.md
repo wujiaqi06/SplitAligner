@@ -4,7 +4,7 @@ SplitAlignerFast maps unrooted gene-tree edges onto a reference tree using exact
 
 ## Build on Linux
 
-Use CMake 3.16 or later, a C++17 compiler, a C compiler, POSIX threads and the OpenSSL development library. Python 3.8 or later runs the binding and optional tests. On Debian or Ubuntu the build packages are `build-essential`, `cmake` and `libssl-dev`.
+Use CMake 3.16 or later, a C++17 compiler, a C compiler, POSIX threads and the OpenSSL 1.1 or later development library. Python 3.8 or later runs the binding and optional tests. On Debian or Ubuntu the build packages are `build-essential`, `cmake` and `libssl-dev`.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -33,7 +33,9 @@ For your own data, supply a reference Newick file and a headerless TSV with one 
 build/saf --reference species.nwk --genes genes.tsv --out aligned --scope full --role free
 ```
 
-`--scope matrix` writes primitive values and states. Use `full` to retain coverage, mapping and composite records, `support` for topology-only free-tree support, and `truth` with `--taxa` to inspect the reference restriction for each taxon set. `--unmatched-splits off` omits the two dedicated unmatched exports. Their defaults and the two event counts are described in [the output guide](docs/OUTPUT.md).
+For piped genes, use `--genes /dev/stdin` (for example, `gzip -dc genes.tsv.gz | build/saf --reference species.nwk --genes /dev/stdin --out aligned`). The CLI reads each input once and hashes its original bytes. An optional UTF-8 BOM at the start of the reference, gene, or taxa file is accepted. If your existing file places the ID immediately before the opening `(` of each tree, select `--gene-format prefix-newick`. Every character before that parenthesis belongs to the ID, including spaces. The default format is tab-separated.
+
+`--scope matrix` writes primitive values and states. Use `full` to retain coverage, mapping and composite records, `support` for topology-only free-tree support, and `truth` with `--taxa` to inspect the reference restriction for each taxon set. `--unmatched-splits off` omits the two dedicated unmatched exports. Use `--no-numeric` to skip branch-length conversion and omit the numeric matrix. The scope defaults and the two event counts are described in [the output guide](docs/OUTPUT.md).
 
 For a free tree, read `composites.jsonl` in full mode to see whether each fused group was recovered. A recovered group has `group_state: "Mapped"`; an absent group has `"NA_fuse_topo"`. The member axes stay F in both cases. A missing branch length alone does not change the group state.
 
