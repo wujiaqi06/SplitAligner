@@ -19,9 +19,10 @@ struct Hash {size_t operator()(const Words&w)const noexcept {
 }};
 using Index=std::unordered_map<Words,size_t,Hash>;
 struct Built {Words mask;std::vector<Split> splits;};
-Built build_tree(size_t nt,const int64_t*parent,const int64_t*taxon,size_t nn){
+Built build_tree(size_t nt,const int64_t*parent,const int64_t*taxon,size_t nn,bool reference){
  if(nt<2||nn<3||!parent||!taxon)invalid("tree needs at least two taxa and valid node arrays");
  if(nt>static_cast<size_t>(INT64_MAX)||nn>static_cast<size_t>(INT64_MAX))invalid("tree index range exceeds int64");
+ if(reference && nt>=nn)invalid("reference must contain every taxon and an internal node");
  size_t width=nt/64+(nt%64!=0); if(width && nn>std::numeric_limits<size_t>::max()/width)invalid("tree bitset size overflow");
  std::vector<std::vector<size_t>> children(nn);size_t root=SAF_NONE;
  for(size_t i=0;i<nn;++i){if(parent[i]==-1){if(root!=SAF_NONE)invalid("multiple roots");root=i;}else{if(parent[i]<0||static_cast<uint64_t>(parent[i])>=nn||static_cast<size_t>(parent[i])==i)invalid("invalid parent index");children[static_cast<size_t>(parent[i])].push_back(i);}}
@@ -31,6 +32,7 @@ Built build_tree(size_t nt,const int64_t*parent,const int64_t*taxon,size_t nn){
  if(order.size()!=nn)invalid("tree is disconnected or cyclic");
  Built b;b.mask.assign(width,0);size_t leaves=0;
  for(size_t i=0;i<nn;++i){if(children[i].empty()){if(taxon[i]<0||static_cast<uint64_t>(taxon[i])>=nt)invalid("invalid leaf taxon");auto t=static_cast<size_t>(taxon[i]);uint64_t bit=UINT64_C(1)<<(t%64);if(b.mask[t/64]&bit)invalid("duplicate taxon");b.mask[t/64]|=bit;++leaves;}else {if(taxon[i]!=-1)invalid("internal node carries taxon");if(children[i].size()<2)invalid("unary internal node");}}
+ if(reference && leaves!=nt)invalid("reference must contain every taxon");
  if(leaves<2)invalid("mapping tree needs at least two observed taxa");
  std::vector<Words> sides(nn,Words(width,0));Index index; index.reserve(nn);
  for(auto it=order.rbegin();it!=order.rend();++it){size_t u=*it;
@@ -66,8 +68,7 @@ saf_support_count increment(char state,bool eligible){saf_support_count x{};x.n_
 }
 std::shared_ptr<const Reference> Reference::create(size_t nt,const char*universe,const int64_t*p,const int64_t*t,size_t nn){
  if(!universe||!*universe)invalid("universe_id must be nonempty");
- Built b=build_tree(nt,p,t,nn);
- if(pop(b.mask)!=nt)invalid("reference must contain every taxon");
+ Built b=build_tree(nt,p,t,nn,true);
  std::shared_ptr<Reference>r(new Reference);r->n_taxa_=nt;r->n_nodes_=nn;r->full_=std::move(b.mask);r->axes_=std::move(b.splits);r->universe_=universe;return r;
 }
 std::shared_ptr<const Coverage> Coverage::create(std::shared_ptr<const Reference>r,const uint64_t*mask,size_t nw){
@@ -83,7 +84,7 @@ std::shared_ptr<const Coverage> Coverage::create(std::shared_ptr<const Reference
 }
 std::shared_ptr<const Mapping> Mapping::create(std::shared_ptr<const Coverage>c,const int64_t*p,const int64_t*t,size_t nn){
  if(!c)invalid("null coverage");
- Built b=build_tree(c->reference()->n_taxa(),p,t,nn);
+ Built b=build_tree(c->reference()->n_taxa(),p,t,nn,false);
  if(b.mask!=c->mask())invalid("gene leafset does not equal coverage");
  std::shared_ptr<Mapping>m(new Mapping);m->coverage_=std::move(c);m->n_nodes_=nn;m->gene_splits_=std::move(b.splits);const auto&projs=m->coverage_->projections();m->projection_to_gene_.assign(projs.size(),SAF_NONE);m->gene_to_projection_.assign(m->gene_splits_.size(),SAF_NONE);m->recovered_.assign(projs.size(),0);Index index;index.reserve(m->gene_splits_.size());for(size_t i=0;i<m->gene_splits_.size();++i)index.emplace(m->gene_splits_[i].side,i);
  for(size_t i=0;i<projs.size();++i){auto hit=index.find(projs[i].split.side);if(hit==index.end())m->reference_absent_.push_back(i);else{m->projection_to_gene_[i]=hit->second;m->gene_to_projection_[hit->second]=i;m->recovered_[i]=1;}}

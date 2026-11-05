@@ -8,7 +8,7 @@ SplitAligner compares each gene tree with a reference species tree and writes a 
 
 The identity in the poem counts each original reference branch once per gene. Each fusion member counts as `NA_fuse`. The group table records `NA_fuse_topo` if the shared split is absent from the free tree.
 
-[Perl quick start](#quick-start) · [Run Fast on Linux](#splitalignerfast-on-linux) · [Use SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation)
+[Run Fast on Linux](#splitalignerfast-on-linux) · [Perl quick start](#quick-start) · [Use SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation)
 
 ## Introduction
 
@@ -23,6 +23,31 @@ The identity in the poem counts each original reference branch once per gene. Ea
 > No ghosts, no leaks:\
 > **Total = Mapped + NA_struct + NA_fuse + NA_topo**.\
 > A quiet ledger—where every absence has a name.
+
+## SplitAlignerFast on Linux
+
+Fast processes one set of gene trees at a time. To build the command-line program on Linux, you need CMake 3.16 or later, C and C++17 compilers, and the OpenSSL development library. Choose a new output directory for each run.
+
+```bash
+git clone https://github.com/wujiaqi06/SplitAligner.git
+cd SplitAligner
+cmake -S fast -B ../splitalignerfast-build -DCMAKE_BUILD_TYPE=Release
+cmake --build ../splitalignerfast-build -j2
+fast/examples/quickstart.sh ../splitalignerfast-build/saf ../quartet-output
+cat ../quartet-output/matrix.tsv
+```
+
+```text
+gene_id    A0  A1  A2  A3  A4
+same        1   2   9   4   5
+different   1   4  NA   2   5
+```
+
+Column `A2` is the split between {A, B} and {C, D}. The gene called `same` has a matching branch of length `9`. For `different`, that branch is absent and the entry is `NA`. [Run Fast on your own trees](fast/README.md) · [Use the core from C, C++ or Python](fast/docs/LIBRARY.md)
+
+In our [single-thread Linux benchmark](docs/fast-timing.md#fast-one-tree-set), Fast read one set of 2,275 gene trees from the 302-mammal example and wrote the branch matrix in about **4 seconds**, or the full output in **8–9 seconds**.
+
+On macOS, the Fast core also runs through [SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation) or the [Python binding](fast/docs/LIBRARY.md).
 
 ## Quick Start
 
@@ -40,23 +65,6 @@ head -n 3 examples/302mammal/run/final.free.na_classified.txt | cut -f1-4
 The preview shows two genes and three reference branches. For gene `A1BG`, branch `B1` has length `0.1809315089`. [Read the output in a six-species example](docs/six-species.md). For your own data, see the [input formats and commands](docs/workflow-reference.md#input-formats).
 
 In the [302-mammal benchmark](docs/fast-timing.md#perl-paired-workflow), Perl processed both the fixed and free trees for each of 2,275 genes and calculated branch support in **9 min 52 s**, using a single thread on an Apple M3 Pro.
-
-## SplitAlignerFast on Linux
-
-To run the Fast command-line program, start in the repository root. You need CMake 3.16 or later, C and C++17 compilers, and the OpenSSL development library. Choose a new output directory for each run.
-
-```bash
-cmake -S fast -B ../splitalignerfast-build -DCMAKE_BUILD_TYPE=Release
-cmake --build ../splitalignerfast-build -j2
-fast/examples/quickstart.sh ../splitalignerfast-build/saf ../quartet-output
-cat ../quartet-output/matrix.tsv
-```
-
-Look at column `A2` in this example. The gene called `same` has a matching branch of length `9`. For `different`, that branch is absent and the entry is `NA`. [Run Fast on your own trees](fast/README.md) · [Use the core from C, C++ or Python](fast/docs/LIBRARY.md)
-
-In our [single-thread Linux benchmark](docs/fast-timing.md#fast-one-tree-set), Fast read one set of 2,275 gene trees from the 302-mammal example and wrote the branch matrix in about **4 seconds**, or the full output in **8–9 seconds**.
-
-On macOS, the Fast core also runs through [SplitAlignerR](https://github.com/wujiaqi06/SplitAlignerR#installation) or the [Python binding](fast/docs/LIBRARY.md).
 
 [Project overview](https://wujiaqi06.github.io/#software) · [Tutorial](https://wujiaqi06.github.io/splitaligner/SplitAligner_tutorial.html) · [Animation](https://wujiaqi06.github.io/splitaligner/SplitAligner_explainer.html) · [Method paper (preprint)](https://doi.org/10.64898/2026.02.24.707838) · [Software citation](CITATION.cff)
 

@@ -86,9 +86,16 @@ def _require_type(value, expected, name):
 
 
 class Library:
-    """Load an explicit shared library, or SAF_LIBRARY / build/release/libsplitaligner_fast.so."""
+    """Load an explicit shared library, or SAF_LIBRARY / build/libsplitaligner_fast.so."""
     def __init__(self, path=None):
-        path = path or os.environ.get("SAF_LIBRARY") or str(Path(__file__).resolve().parents[1] / "build" / "release" / "libsplitaligner_fast.so")
+        path = path or os.environ.get("SAF_LIBRARY")
+        if not path:
+            build = Path(__file__).resolve().parents[1] / "build"
+            path = build / "libsplitaligner_fast.so"
+            legacy = build / "release" / path.name
+            if not path.exists() and legacy.exists():
+                path = legacy
+            path = str(path)
         self.path = str(Path(path).resolve())
         self._c = C.CDLL(self.path)
         p, z = C.c_void_p, C.c_size_t
