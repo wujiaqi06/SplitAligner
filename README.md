@@ -43,7 +43,7 @@ same        1   2   9   4   5
 different   1   4  NA   2   5
 ```
 
-Column `A2` is the split between {A, B} and {C, D}. The gene called `same` has a matching branch of length `9`. For `different`, that branch is absent and the entry is `NA`. [Run Fast on your own trees](fast/README.md) · [Use the core from C, C++ or Python](fast/docs/LIBRARY.md)
+Column `A2` is the split between {A, B} and {C, D}. The gene called `same` has a matching branch of length `9`. For `different`, that branch is absent and the entry is `NA`. Across both genes the split has 50% support. Each gene-tree run also writes [the support table and annotated reference tree](fast/docs/OUTPUT.md#branch-support). [Run Fast on your own trees](fast/README.md) · [Use the core from C, C++ or Python](fast/docs/LIBRARY.md)
 
 In our [single-thread Linux benchmark](docs/fast-timing.md#fast-one-tree-set), Fast read one set of 2,275 gene trees from the 302-mammal example and wrote the branch matrix in about **4 seconds**, or the full output in **8–9 seconds**.
 

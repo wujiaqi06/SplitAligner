@@ -66,6 +66,8 @@ if(Python3_Interpreter_FOUND)
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_layered_groups.py $<TARGET_FILE:saf>)
   add_test(NAME cli_inputs
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cli_inputs.py $<TARGET_FILE:saf>)
+  add_test(NAME cli_support_tree
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_support_tree.py $<TARGET_FILE:saf>)
   add_test(NAME cli_quartet
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_quartet_example.py $<TARGET_FILE:saf>)
 endif()

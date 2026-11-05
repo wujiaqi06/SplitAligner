@@ -23,9 +23,10 @@ cmake --install build --prefix "$PWD/install"
 ```sh
 ./examples/quickstart.sh ./build/saf quartet-output
 cat quartet-output/raw_states.tsv
+cat quartet-output/support.nwk
 ```
 
-The two input trees share four taxa with the reference. The first has the same five unrooted splits. The second recovers all four terminal edges and misses the reference's internal split. Its own internal split is the unmatched gene edge. In `matrix.tsv`, the matched internal edge in the first tree has length 9, the sum of the two root-adjacent lengths 3 and 6. The second tree has `NA` on that reference axis. Use a fresh output directory for each run.
+The two input trees share four taxa with the reference. The first has the same five unrooted splits. The second recovers all four terminal edges and misses the reference's internal split. Its own internal split is the unmatched gene edge. In `matrix.tsv`, the matched internal edge in the first tree has length 9, the sum of the two root-adjacent lengths 3 and 6. The second tree has `NA` on that reference axis. The support tree is `((A,B)50,(C,D)50);`. The reference's internal split is present in one of two eligible genes. Its two labels show where the display root divides the same branch. Use a fresh output directory for each run.
 
 For your own data, supply a reference Newick file and a headerless TSV with one gene ID, one tab and one Newick tree on each line.
 
@@ -35,7 +36,9 @@ build/saf --reference species.nwk --genes genes.tsv --out aligned --scope full -
 
 For piped genes, use `--genes /dev/stdin` (for example, `gzip -dc genes.tsv.gz | build/saf --reference species.nwk --genes /dev/stdin --out aligned`). The CLI reads each input once and hashes its original bytes. An optional UTF-8 BOM at the start of the reference, gene, or taxa file is accepted. If your existing file places the ID immediately before the opening `(` of each tree, select `--gene-format prefix-newick`. Every character before that parenthesis belongs to the ID, including spaces. The default format is tab-separated.
 
-`--scope matrix` writes primitive values and states. Use `full` to retain coverage, mapping and composite records, `support` for topology-only free-tree support, and `truth` with `--taxa` to inspect the reference restriction for each taxon set. `--unmatched-splits off` omits the two dedicated unmatched exports. Use `--no-numeric` to skip branch-length conversion and omit the numeric matrix. The scope defaults and the two event counts are described in [the output guide](docs/OUTPUT.md).
+Every run with gene trees writes `support.tsv` and the annotated reference tree `support.nwk`, including `--role fixed` and `--scope matrix`. [Compare fixed and free support in a seven-tip example](docs/OUTPUT.md#branch-support).
+
+`--scope matrix` writes primitive values and states. Use `full` to retain coverage, mapping and composite records, `support` for topology-only support, and `truth` with `--taxa` to inspect the reference restriction for each taxon set. `--unmatched-splits off` omits the two dedicated unmatched exports. Use `--no-numeric` to skip branch-length conversion and omit the numeric matrix. The scope defaults and the two event counts are described in [the output guide](docs/OUTPUT.md).
 
 For a free tree, read `composites.jsonl` in full mode to see whether each fused group was recovered. A recovered group has `group_state: "Mapped"`; an absent group has `"NA_fuse_topo"`. The member axes stay F in both cases. A missing branch length alone does not change the group state.
 
