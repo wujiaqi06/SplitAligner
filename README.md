@@ -68,4 +68,4 @@ On macOS, the Fast core also runs through [SplitAlignerR](https://github.com/wuj
 
 ## Acknowledgments
 
-I thank Chao Zhang (张超) for his technical help and for sharing his `fastSplitAligner.py` implementation.
+I thank Chao Zhang (张超; [@chaoszhang](https://github.com/chaoszhang)) of the School of Life Sciences, Peking University, for his technical help and for sharing his `fastSplitAligner.py` implementation.
