@@ -139,6 +139,13 @@ int main() {
             check(fs::is_symlink(fs::symlink_status(link)), "dangling link was changed");
 #endif
             check(!fs::exists(absent), "dangling link target was created");
+#ifdef _WIN32
+            // MinGW remove_all may fail on a dangling directory symlink.
+            // Remove only this fixture link using its native Windows API.
+            if (!RemoveDirectoryW(link.c_str()))
+                throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
+                                        "remove tested directory symlink");
+#endif
         }
 #ifdef _WIN32
         else if (link_error.value() == ERROR_PRIVILEGE_NOT_HELD) {
