@@ -77,9 +77,10 @@ jobs:
       - name: Configure native Windows tools
         run: |
           set -euo pipefail
-          python -c 'import os; assert os.name == "nt", "Native Windows Python required"'
+          /ucrt64/bin/python.exe -c 'import os; assert os.name == "nt", "Native Windows Python required"'
           cmake -S fast -B build-fast -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DOPENSSL_ROOT_DIR="$(cygpath -m /ucrt64)" \
+            -DPython3_EXECUTABLE="$(cygpath -m /ucrt64/bin/python.exe)" \
             -DSAF_REQUIRE_PYTHON_TESTS=ON -DSAF_BUILD_COMMIT="$GITHUB_SHA"
       - name: Build and test
         run: |
@@ -90,4 +91,4 @@ jobs:
         run: |
           set -euo pipefail
           cmake --install build-fast --prefix "$PWD/install-fast"
-          python fast/examples/quickstart.py "$PWD/install-fast/bin/saf.exe" "$PWD/quartet-output"
+          /ucrt64/bin/python.exe fast/examples/quickstart.py "$PWD/install-fast/bin/saf.exe" "$PWD/quartet-output"

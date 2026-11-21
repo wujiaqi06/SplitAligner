@@ -35,7 +35,8 @@ jobs:
           LC_ALL: C
         run: |
           prove -v tests/windows_platform/run.pl tests/compact_kernel/run.pl tests/materialized_spool/run.pl tests/materialized_spool/utf8_bytes.pl
-          perl tests/compact_publication/run.pl
+          publication_parent="$(python -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_TEMP")"
+          perl tests/compact_publication/run.pl "$publication_parent/perl-publication"
           python tests/windows_platform/smoke.py --work-dir "$RUNNER_TEMP/perl-smoke"
           python tests/compact_diagnostics/run.py --work-dir "$RUNNER_TEMP/perl-diagnostics"
       - name: Native Windows checks
@@ -43,8 +44,20 @@ jobs:
         shell: pwsh
         run: |
           ./tests/windows_platform/run-native.ps1 -WorkDir "$env:RUNNER_TEMP/perl-native"
-          python ./tests/compact_diagnostics/run.py --work-dir "$env:RUNNER_TEMP/perl-diagnostics"
-          if ($LASTEXITCODE -ne 0) { throw 'Gene diagnostic regression failed.' }
+          # Match the native runner's bounded filesystem environment. The
+          # default Windows TEMP can have unsupported alias/path spellings.
+          $DiagnosticScratch = Join-Path $env:RUNNER_TEMP 'perl-diagnostics-temp'
+          if (Test-Path -LiteralPath $DiagnosticScratch) { throw 'Use a fresh diagnostic scratch directory.' }
+          New-Item -ItemType Directory -Path $DiagnosticScratch | Out-Null
+          $DiagnosticScratch = (Resolve-Path -LiteralPath $DiagnosticScratch).Path
+          $PreviousTemp = $env:TEMP; $PreviousTmp = $env:TMP; $PreviousTmpdir = $env:TMPDIR
+          try {
+            $env:TEMP = $DiagnosticScratch; $env:TMP = $DiagnosticScratch; $env:TMPDIR = $DiagnosticScratch
+            python ./tests/compact_diagnostics/run.py --work-dir "$env:RUNNER_TEMP/perl-diagnostics"
+            if ($LASTEXITCODE -ne 0) { throw 'Gene diagnostic regression failed; retain case stderr for the actual reason.' }
+          } finally {
+            $env:TEMP = $PreviousTemp; $env:TMP = $PreviousTmp; $env:TMPDIR = $PreviousTmpdir
+          }
       - name: Retain native Windows evidence
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -55,3 +68,6 @@ jobs:
             ${{ runner.temp }}/perl-native/RESULT*
             ${{ runner.temp }}/perl-native/smoke space/RESULTS.json
             ${{ runner.temp }}/perl-diagnostics/RESULTS.json
+            ${{ runner.temp }}/perl-diagnostics/*/stderr.log
+            ${{ runner.temp }}/perl-diagnostics/*/stdout.log
+            ${{ runner.temp }}/perl-diagnostics/*/COMMAND.json

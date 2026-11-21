@@ -1,9 +1,13 @@
 #include "platform.hpp"
 #include <chrono>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#ifdef _WIN32
+#include <winioctl.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -23,6 +27,39 @@ static std::string read(const fs::path& path) {
     check(bool(stream), "cannot read sentinel");
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
+
+#ifdef _WIN32
+// Use the same native boundary for creation and inspection. Some MinGW
+// filesystem implementations do not identify Windows directory symlinks.
+static std::vector<unsigned char> symlink_record(const fs::path& path) {
+    const HANDLE handle = CreateFileW(path.c_str(), 0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
+                                "open directory symlink for inspection");
+    std::vector<unsigned char> record(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+    DWORD returned = 0;
+    const BOOL received = DeviceIoControl(handle, FSCTL_GET_REPARSE_POINT,
+        nullptr, 0, record.data(), static_cast<DWORD>(record.size()), &returned, nullptr);
+    const DWORD read_error = received ? ERROR_SUCCESS : GetLastError();
+    const BOOL closed = CloseHandle(handle);
+    const DWORD close_error = closed ? ERROR_SUCCESS : GetLastError();
+    if (read_error != ERROR_SUCCESS)
+        throw std::system_error(static_cast<int>(read_error), std::system_category(),
+                                "read directory symlink reparse record");
+    if (close_error != ERROR_SUCCESS)
+        throw std::system_error(static_cast<int>(close_error), std::system_category(),
+                                "close directory symlink inspection handle");
+    check(returned >= 8 && returned <= record.size(), "invalid directory symlink reparse record");
+    DWORD tag = 0;
+    std::memcpy(&tag, record.data(), sizeof(tag));
+    check(tag == IO_REPARSE_TAG_SYMLINK, "directory symlink reparse tag differs");
+    record.resize(returned);
+    return record;
+}
+#endif
 
 static void rejected(const fs::path& source, const fs::path& destination) {
     bool caught = false;
@@ -92,8 +129,15 @@ int main() {
         fs::create_directory_symlink(absent, link, link_error);
 #endif
         if (!link_error) {
+#ifdef _WIN32
+            const auto before = symlink_record(link);
+#endif
             rejected(source, link);
+#ifdef _WIN32
+            check(symlink_record(link) == before, "dangling link reparse tag or target changed");
+#else
             check(fs::is_symlink(fs::symlink_status(link)), "dangling link was changed");
+#endif
             check(!fs::exists(absent), "dangling link target was created");
         }
 #ifdef _WIN32
