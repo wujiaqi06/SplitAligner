@@ -6,6 +6,9 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 
+if not __debug__:
+    raise RuntimeError("Run tests without Python optimization; assertions are required")
+
 cli = sys.argv[1]
 with TemporaryDirectory() as tmp:
     root = Path(tmp)

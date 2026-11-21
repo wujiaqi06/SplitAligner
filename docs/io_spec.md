@@ -114,6 +114,7 @@ Required arguments:
 - `--species`: species tree file
 - `--gene`: gene-tree file
 - `--label`: output prefix
+- `--fusion-view whole|direct`: use complete component sums (default) or report only single-edge measurements in the extended matrix. Use a fresh label when upgrading a historical run or switching views.
 - `species_tree` is a reserved matrix label because it would collide with the fixed common `species_tree.*` artifact namespace
 - `--force`: optional ownership-gated transactional replacement; without it, existing label-owned outputs are an error
 
@@ -128,6 +129,7 @@ Main outputs:
 - `<label>_split_branch_label/`
 - `<label>.matrix_no_fuse.txt`
 - `<label>.matrix_with_fuse.txt`
+- `<label>.fusion_cells.tsv`
 - `<label>.primitive_axis.tsv`
 - `<label>.gene_id_map.tsv`
 - `<label>.primitive_state.tsv`
@@ -140,7 +142,9 @@ Interpretation:
 - `<label>_splits/` stores per-gene split representations
 - `<label>_split_branch_label/` stores per-gene mappings onto the species-tree branch coordinate system
 - `<label>.matrix_no_fuse.txt` contains primitive branches only
-- `<label>.matrix_with_fuse.txt` additionally includes fused-branch columns such as `B12|B47`
+- `<label>.matrix_with_fuse.txt` includes every group that forms under at least one gene's reference restriction, including groups whose split was never recovered. In the default `whole` view a gene supplies one measured unrooted edge or the sum of all components that exactly cover the group. Each component must be recovered and have a usable length. A component may itself be a fusion. The selected gene-tree edges may be nonadjacent. In the `direct` view only a group that forms a single measured edge in this gene has a number.
+- `<label>.fusion_cells.tsv` identifies the gene, group, reference and recovery states, numeric status, construction mode, ordered component IDs, deleted members, and groups cut by the target. Group members use `|` and multiple components use commas. For a representable target the mode identifies the applicable construction, and `numeric_status=available` identifies an emitted measurement or sum. For an unavailable target the listed components touch its members but do not constitute a usable cover. The separate projected-groups table records each actual fusion once.
+- For a cell's source edges, find the gene's storage key in `<label>.gene_id_map.tsv` and look up each component ID in `<label>_split_branch_label/<storage_key>.components.tsv`. For a match, `matched_gene_split_row` selects the same **1-based line** in two files under `<label>_splits/`: `<storage_key>.split.txt` gives the canonical unrooted split and length, and `<storage_key>.source_nodes.txt` gives its comma-separated child indices in Newick preorder (root index 0). A binary display root can contribute both child edges to one component. For a miss, the component records the absent projected split itself.
 - `<label>.gene_id_map.tsv` maps injective filesystem storage keys back to exact original gene IDs
 - `<label>.primitive_state.tsv` uses schema `SplitAligner-primitive-state-v1`; its header is the exact primitive axis and each cell is `S`, `D`, `F`, or `U`
 - `<label>.run_manifest.json` uses schema `SplitAligner-run-manifest-v4` with hashes for the primitive-truth and projected-group files and records the canonical-key schema, ordered coordinate mapping and SHA-256, input hashes, original record count, identity map, matrix hashes, the bound primitive-state provenance, and a `SplitAligner-output-ownership-v1` inventory covering every published file and directory descendant

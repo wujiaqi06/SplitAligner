@@ -18,6 +18,9 @@ from typing import Any, Iterable
 ROOT = Path(sys.argv[1]).resolve()
 SPLITALIGNER = ROOT / "SplitAligner.pl"
 PASS_COUNT = 0
+REJECTION_COUNT = 0
+COMMAND_COUNT = 0
+COMPACT_SUFFIXES = ("compact.jsonl", "compact.index.json", "taxon_dictionary.json")
 
 COMMON_OUTPUTS = [
     "species_tree.forSplit.nwk",
@@ -103,6 +106,8 @@ def write_seed(directory: Path, *, species: str | None = None, genes: str | None
 
 
 def run_sa(directory: Path, args: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    global COMMAND_COUNT
+    COMMAND_COUNT += 1
     merged = os.environ.copy()
     if env:
         merged.update(env)
@@ -128,12 +133,15 @@ def assert_no_workspace(directory: Path) -> None:
 
 
 def expect_rejected(directory: Path, args: list[str], label: str) -> subprocess.CompletedProcess[str]:
+    global REJECTION_COUNT
     result = run_sa(directory, args)
     if result.returncode == 0:
         fail(f"{label}: command unexpectedly succeeded")
     if "Output ownership" not in result.stderr:
         fail(f"{label}: rejection did not identify output ownership\n{result.stderr}")
     assert_no_workspace(directory)
+    REJECTION_COUNT += 1
+    print(f"[CASE] {label}: rejected without a transaction workspace")
     return result
 
 
@@ -193,13 +201,14 @@ def finalize_fix(directory: Path, final: str, *, force: bool = False) -> None:
 
 def matrix_outputs(directory: Path, label: str, *, include_common: bool = True) -> list[Path]:
     names = [
-        f"{label}_splits",
+        *(f"{label}.{suffix}" for suffix in COMPACT_SUFFIXES),
         f"{label}_split_branch_label",
         f"{label}.gene_id_map.tsv",
         f"{label}.primitive_axis.tsv",
         f"{label}.primitive_state.tsv",
         f"{label}.matrix_no_fuse.txt",
         f"{label}.matrix_with_fuse.txt",
+        f"{label}.fusion_cells.tsv",
         f"{label}.run_manifest.json",
     ]
     if include_common:
@@ -245,11 +254,13 @@ def case_dir(base: Path, name: str) -> Path:
 
 def test_unowned_matrix_files(base: Path) -> None:
     names = [
+        *(f"x.{suffix}" for suffix in COMPACT_SUFFIXES),
         "x.gene_id_map.tsv",
         "x.primitive_axis.tsv",
         "x.primitive_state.tsv",
         "x.matrix_no_fuse.txt",
         "x.matrix_with_fuse.txt",
+        "x.fusion_cells.tsv",
         "x.run_manifest.json",
     ]
     for index, name in enumerate(names):
@@ -265,7 +276,8 @@ def test_unowned_matrix_files(base: Path) -> None:
 
 
 def test_unowned_matrix_directories(base: Path) -> None:
-    for suffix in ("splits", "split_branch_label"):
+    # Retained aggregate directory; compact destinations are regular files.
+    for suffix in ("split_branch_label",):
         directory = case_dir(base, f"own02_{suffix}")
         write_seed(directory)
         target = directory / f"x_{suffix}"
@@ -284,7 +296,17 @@ def test_unowned_matrix_directories(base: Path) -> None:
         before = snapshot_paths(paths)
         expect_rejected(swapped, matrix_args("x", force=True), f"OWN-02 {suffix} as file")
         assert_snapshot(paths, before, f"OWN-02 {suffix} as file")
-    passed("OWN-02 arbitrary unowned matrix directory trees are preserved")
+    for suffix in COMPACT_SUFFIXES:
+        directory = case_dir(base, f"own02_compact_directory_{suffix}")
+        write_seed(directory)
+        target = directory / f"x.{suffix}"
+        (target / "nested").mkdir(parents=True)
+        (target / "nested" / "user.txt").write_text("USER DATA\n", encoding="utf-8")
+        paths = list(directory.iterdir())
+        before = snapshot_paths(paths)
+        expect_rejected(directory, matrix_args("x", force=True), f"OWN-02 {suffix} as directory")
+        assert_snapshot(paths, before, f"OWN-02 {suffix} as directory")
+    passed("OWN-02 unowned aggregate directories and directory-valued compact targets are preserved")
 
 
 def test_unowned_common_files(base: Path) -> None:
@@ -391,7 +413,7 @@ def test_owner_record_defects(base: Path) -> None:
 
 def test_owned_directory_defects(base: Path) -> None:
     mutations = ("add", "modify", "delete", "type_swap", "mode")
-    for dirname in ("x_splits", "x_split_branch_label"):
+    for dirname in ("x_split_branch_label",):
         for mutation in mutations:
             directory = case_dir(base, f"own08_09_{dirname}_{mutation}")
             write_seed(directory)
@@ -417,7 +439,28 @@ def test_owned_directory_defects(base: Path) -> None:
             before = snapshot_paths(paths)
             expect_rejected(directory, matrix_args("x", force=True), f"directory {dirname} {mutation}")
             assert_snapshot(paths, before, f"directory {dirname} {mutation}")
-    passed("OWN-08/09 recursive directory additions, edits, deletions, and type swaps fail closed")
+    for suffix in COMPACT_SUFFIXES:
+        for mutation in ("modify", "delete", "type_swap", "mode"):
+            directory = case_dir(base, f"own08_09_compact_{suffix}_{mutation}")
+            write_seed(directory)
+            matrix(directory, "x")
+            owned = directory / f"x.{suffix}"
+            if mutation == "modify":
+                with owned.open("ab") as handle:
+                    handle.write(b"TAMPER\n")
+            elif mutation == "delete":
+                owned.unlink()
+            elif mutation == "type_swap":
+                owned.unlink()
+                owned.mkdir()
+                (owned / "user.txt").write_text("USER DATA\n", encoding="utf-8")
+            elif mutation == "mode":
+                owned.chmod(0o600 if stat.S_IMODE(owned.stat().st_mode) != 0o600 else 0o400)
+            paths = list(directory.iterdir())
+            before = snapshot_paths(paths)
+            expect_rejected(directory, matrix_args("x", force=True), f"compact {suffix} {mutation}")
+            assert_snapshot(paths, before, f"compact {suffix} {mutation}")
+    passed("OWN-08/09 recursive directory and all compact file mutations fail closed")
 
 
 def test_link_substitutions(base: Path) -> None:
@@ -429,7 +472,7 @@ def test_link_substitutions(base: Path) -> None:
         if kind.startswith("top"):
             owned = directory / "x.matrix_no_fuse.txt"
         else:
-            owned = first_regular_file(directory / "x_splits")
+            owned = first_regular_file(directory / "x_split_branch_label")
         original = owned.read_bytes()
         target.write_bytes(original)
         owned.unlink()
@@ -441,13 +484,38 @@ def test_link_substitutions(base: Path) -> None:
         before = snapshot_paths(paths)
         expect_rejected(directory, matrix_args("x", force=True), f"link substitution {kind}")
         assert_snapshot(paths, before, f"link substitution {kind}")
-    passed("symlink and hardlink substitutions cannot acquire destructive ownership")
+    for suffix in COMPACT_SUFFIXES:
+        for kind in ("symlink", "hardlink"):
+            directory = case_dir(base, f"links_compact_{suffix}_{kind}")
+            write_seed(directory)
+            matrix(directory, "x")
+            owned = directory / f"x.{suffix}"
+            target = directory / "unrelated.txt"
+            target.write_bytes(owned.read_bytes())
+            owned.unlink()
+            if kind == "symlink":
+                owned.symlink_to(target.name)
+            else:
+                os.link(target, owned)
+            paths = list(directory.iterdir())
+            before = snapshot_paths(paths)
+            expect_rejected(directory, matrix_args("x", force=True), f"compact link {suffix} {kind}")
+            assert_snapshot(paths, before, f"compact link {suffix} {kind}")
+    passed("symlink and hardlink substitutions, including all compact artifacts, cannot acquire destructive ownership")
 
 
 def test_valid_matrix_force(base: Path) -> None:
     directory = case_dir(base, "own10_matrix_force")
     write_seed(directory)
+    # A bare v1-style pathname is no longer a publication destination. Preserve
+    # unrelated user data there; an actual old run/manifest is tested separately
+    # by the compact_pipeline legacy-layout refusal fixture.
+    legacy_unowned = directory / "x_splits"
+    (legacy_unowned / "nested").mkdir(parents=True)
+    (legacy_unowned / "nested" / "user.txt").write_text("USER DATA\n", encoding="utf-8")
+    legacy_before = snapshot_paths([legacy_unowned])
     matrix(directory, "x")
+    assert_snapshot([legacy_unowned], legacy_before, "OWN-10 unrelated legacy-name directory")
     outputs = matrix_outputs(directory, "x")
 
     identical_before = snapshot_paths(outputs)
@@ -471,6 +539,7 @@ def test_valid_matrix_force(base: Path) -> None:
     second_before = snapshot_paths(outputs)
     matrix(directory, "x", force=True)
     assert_snapshot(outputs, second_before, "OWN-10 second identical matrix reuse")
+    assert_snapshot([legacy_unowned], legacy_before, "OWN-10 legacy-name directory after force")
     passed("OWN-10 intact matrix runs replace transactionally and identical reruns do not mutate")
 
 
@@ -657,13 +726,14 @@ def test_inventory_and_determinism(base: Path) -> None:
         finalize_fix(directory, "fixed_only")
 
     matrix_expected = set(COMMON_OUTPUTS) | {
-        "free_splits",
+        *(f"free.{suffix}" for suffix in COMPACT_SUFFIXES),
         "free_split_branch_label",
         "free.gene_id_map.tsv",
         "free.primitive_axis.tsv",
         "free.primitive_state.tsv",
         "free.matrix_no_fuse.txt",
         "free.matrix_with_fuse.txt",
+        "free.fusion_cells.tsv",
     }
     if inventory_paths(first / "free.run_manifest.json") != matrix_expected:
         fail("matrix ownership inventory does not cover the exact publication set")
@@ -692,8 +762,12 @@ def test_inventory_and_determinism(base: Path) -> None:
     directory_entries = [
         entry for entry in ownership["outputs"] if entry["type"] == "directory"
     ]
-    if len(directory_entries) != 2:
-        fail("matrix ownership inventory does not include both output directories")
+    if len(directory_entries) != 1 or directory_entries[0]["relative_path"] != "free_split_branch_label":
+        fail("matrix ownership inventory must include exactly the aggregate directory")
+    for suffix in COMPACT_SUFFIXES:
+        compact = [entry for entry in ownership["outputs"] if entry["relative_path"] == f"free.{suffix}"]
+        if len(compact) != 1 or compact[0]["type"] != "file":
+            fail(f"compact artifact missing from exact file inventory: {suffix}")
     for entry in directory_entries:
         fingerprint = entry["fingerprint"]
         paths = [item["relative_path"] for item in fingerprint["entries"]]
@@ -736,6 +810,7 @@ def main() -> None:
     if PASS_COUNT != 16:
         fail(f"expected 16 regression groups, observed {PASS_COUNT}")
     print(f"[PASS] RECERT-006 output-ownership regression groups: {PASS_COUNT}/16")
+    print(f"[COVERAGE] {REJECTION_COUNT} rejection cases; {COMMAND_COUNT} CLI commands")
 
 
 if __name__ == "__main__":

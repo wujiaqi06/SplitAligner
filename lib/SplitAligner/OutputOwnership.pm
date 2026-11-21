@@ -11,8 +11,9 @@ use JSON::PP;
 use SplitAligner::IOSafety qw(build_destination_record);
 use SplitAligner::Provenance qw(file_sha256 read_json_file);
 use SplitAligner::TextIO qw(
-    decode_filesystem_path_utf8
+    decode_utf8_strict
 );
+use SplitAligner::Platform qw(native_windows assert_windows_path assert_windows_stat);
 
 our @EXPORT_OK = qw(
     attach_output_ownership
@@ -118,15 +119,42 @@ sub build_publication_plan {
     die "[ERROR][Output ownership] Missing publication authorization.\n"
         unless ref($authorization) eq 'HASH';
     my $force = $arg{force} ? 1 : 0;
-    my ($items) = _validated_items(
+    my ($items, $owner) = _validated_items(
         $arg{items}, $authorization->{owner_manifest_path});
+    # This is the inventory captured when the generated manifest was written,
+    # not an inventory rebuilt from possibly changed staging bytes (P1).
+    my $inventory = _source_inventory_index($arg{source_inventory});
+    my $manifest_sha256 = $arg{source_manifest_sha256};
+    die "[ERROR][Output ownership] Missing or invalid generated manifest seal.\n"
+        unless defined $manifest_sha256 && $manifest_sha256 =~ /\A[0-9a-f]{64}\z/;
 
     _verify_authorization($authorization) if $authorization->{has_prior_owner};
 
     my @plan;
+    my %inventory_used;
     for my $item (@{$items}) {
         my $source = _source_path($source_root, $item->{source});
         my $source_snapshot = _runtime_snapshot($source, $item->{type});
+        if ($item->{owner_manifest}) {
+            die "[ERROR][Output ownership] Generated owner manifest differs "
+                . "from its serialization seal: $source.\n"
+                unless $source_snapshot->{fingerprint}{sha256} eq $manifest_sha256;
+        } else {
+            my $relative = _relative_publication_path(
+                $item->{destination}, dirname($owner->{destination}));
+            my $actual = {
+                role          => $item->{role},
+                relative_path => $relative,
+                type          => $item->{type},
+                shared        => $item->{shared} ? 1 : 0,
+                fingerprint   => $source_snapshot->{fingerprint},
+            };
+            die "[ERROR][Output ownership] Generated output differs from its "
+                . "manifest inventory for role '$item->{role}': $source.\n"
+                unless exists $inventory->{$relative}
+                    && _json_equal($actual, $inventory->{$relative});
+            $inventory_used{$relative} = 1;
+        }
         my $destination = $item->{destination};
         my ($action, $existing_snapshot);
 
@@ -174,10 +202,34 @@ sub build_publication_plan {
         };
     }
 
+    die "[ERROR][Output ownership] Generated-output inventory contains "
+        . "unexpected publication paths.\n"
+        unless scalar(keys %inventory_used) == scalar(keys %{$inventory});
+
     return {
         authorization => $authorization,
         items         => \@plan,
     };
+}
+
+sub _source_inventory_index {
+    my ($inventory) = @_;
+    die "[ERROR][Output ownership] Missing generated-output inventory for "
+        . "publication.\n"
+        unless ref($inventory) eq 'ARRAY';
+    my %index;
+    for my $entry (@{$inventory}) {
+        die "[ERROR][Output ownership] Invalid generated-output inventory entry.\n"
+            unless ref($entry) eq 'HASH'
+                && defined $entry->{relative_path}
+                && $entry->{relative_path} ne ''
+                && ref($entry->{fingerprint}) eq 'HASH';
+        die "[ERROR][Output ownership] Duplicate generated-output inventory "
+            . "path '$entry->{relative_path}'.\n"
+            if exists $index{$entry->{relative_path}};
+        $index{$entry->{relative_path}} = $entry;
+    }
+    return \%index;
 }
 
 sub verify_publication_plan {
@@ -353,6 +405,10 @@ sub _verify_existing_owner {
     my %snapshots = (
         $owner_path => $owner_snapshot,
     );
+    my $label_option = $mode eq 'matrix' ? '--label' : '--final_label';
+    my $layout_hint = " The stored output layout differs from this run, so "
+        . "--force cannot authorize replacement. Rerun with a new $label_option "
+        . "value or in a clean output directory.";
     my $expected_count = 0;
     for my $item (@{$items}) {
         next if $item->{owner_manifest};
@@ -360,7 +416,8 @@ sub _verify_existing_owner {
         my $relative = _relative_publication_path(
             $item->{destination}, dirname($owner_path));
         die "[ERROR][Output ownership] Ownership inventory in $owner_path "
-            . "does not cover role '$item->{role}' at $item->{destination}.\n"
+            . "does not cover role '$item->{role}' at $item->{destination}."
+            . "$layout_hint\n"
             unless exists $stored{$relative};
         my $current_entry = _output_entry(
             path          => $item->{destination},
@@ -377,7 +434,7 @@ sub _verify_existing_owner {
             = _runtime_snapshot($item->{destination}, $item->{type});
     }
     die "[ERROR][Output ownership] Ownership inventory in $owner_path "
-        . "contains unexpected output paths.\n"
+        . "contains unexpected output paths.$layout_hint\n"
         unless $expected_count == scalar(keys %stored);
 
     return {
@@ -455,6 +512,7 @@ sub _canonical_path {
 sub _relative_publication_path {
     my ($path, $base) = @_;
     my $relative = File::Spec->canonpath(File::Spec->abs2rel($path, $base));
+    $relative =~ tr{\\}{/} if native_windows();
     die "[ERROR][Output ownership] Publication path is not relative: $path.\n"
         if File::Spec->file_name_is_absolute($relative);
     die "[ERROR][Output ownership] Invalid publication path: $relative.\n"
@@ -475,9 +533,11 @@ sub _output_entry {
 
 sub _runtime_snapshot {
     my ($path, $expected_type) = @_;
+    assert_windows_path($path);
     my @stat = lstat($path);
     die "[ERROR][Output ownership] Expected object is missing: $path.\n"
         unless @stat;
+    assert_windows_stat(\@stat, $path);
     return {
         device      => 0 + $stat[0],
         inode       => 0 + $stat[1],
@@ -487,9 +547,11 @@ sub _runtime_snapshot {
 
 sub _fingerprint {
     my ($path, $expected_type) = @_;
+    assert_windows_path($path);
     my @stat = lstat($path);
     die "[ERROR][Output ownership] Expected object is missing: $path.\n"
         unless @stat;
+    assert_windows_stat(\@stat, $path);
     return _fingerprint_from_stat($path, $expected_type, \@stat);
 }
 
@@ -540,7 +602,9 @@ sub _walk_directory {
     my @name;
     while (defined(my $raw = readdir $dh)) {
         next if $raw eq '.' || $raw eq '..';
-        push @name, decode_filesystem_path_utf8(
+        # A readdir basename is not relative to the process working directory.
+        # Decode it here; validate its real full path below after catfile.
+        push @name, decode_utf8_strict(
             $raw, 'output inventory directory entry');
     }
     closedir $dh
@@ -549,10 +613,12 @@ sub _walk_directory {
 
     for my $name (sort { $a cmp $b } @name) {
         my $candidate = File::Spec->catfile($directory, $name);
+        assert_windows_path($candidate);
         my $relative = $relative_parent eq ''
             ? $name
             : File::Spec->catfile($relative_parent, $name);
         $relative = File::Spec->canonpath($relative);
+        $relative =~ tr{\\}{/} if native_windows();
         my @child_stat = lstat($candidate);
         die "[ERROR][Output ownership] Cannot inspect directory entry: "
             . "$candidate.\n"
@@ -575,7 +641,7 @@ sub _walk_directory {
             die "[ERROR][Output ownership] Cannot read symlink target: "
                 . "$candidate.\n"
                 unless defined $target;
-            $child->{target} = decode_filesystem_path_utf8(
+            $child->{target} = decode_utf8_strict(
                 $target, 'output inventory symlink target');
         } elsif ($child_type eq 'directory') {
             _walk_directory($candidate, $relative, $entry);

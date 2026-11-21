@@ -5,6 +5,7 @@ mapping whenever parent/taxon arrays or node-to-edge bindings change.
 """
 import ctypes as C
 import os
+import sys
 from pathlib import Path
 
 NONE = C.c_size_t(-1).value
@@ -86,9 +87,18 @@ def _require_type(value, expected, name):
 
 
 class Library:
-    """Load an explicit shared library, or SAF_LIBRARY / build/release/libsplitaligner_fast.so."""
+    """Load an explicit library, or SAF_LIBRARY / the native library in build/."""
     def __init__(self, path=None):
-        path = path or os.environ.get("SAF_LIBRARY") or str(Path(__file__).resolve().parents[1] / "build" / "release" / "libsplitaligner_fast.so")
+        path = path or os.environ.get("SAF_LIBRARY")
+        if not path:
+            build = Path(__file__).resolve().parents[1] / "build"
+            names = (["splitaligner_fast.dll", "libsplitaligner_fast.dll"] if os.name == "nt"
+                     else ["libsplitaligner_fast.dylib"] if sys.platform == "darwin"
+                     else ["libsplitaligner_fast.so"])
+            candidates = [directory / name for directory in
+                          [build, build / "Release", build / "Debug", build / "release"]
+                          for name in names]
+            path = str(next((candidate for candidate in candidates if candidate.exists()), candidates[0]))
         self.path = str(Path(path).resolve())
         self._c = C.CDLL(self.path)
         p, z = C.c_void_p, C.c_size_t

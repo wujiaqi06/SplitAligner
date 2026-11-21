@@ -5,9 +5,10 @@ use warnings;
 use Digest::SHA ();
 use File::Basename qw(dirname basename);
 use File::Spec;
-use Fcntl qw(O_NONBLOCK O_RDONLY S_ISREG);
+use Fcntl qw(O_RDONLY S_ISREG);
 use Exporter qw(import);
 use SplitAligner::TextIO qw(abs_path_utf8 getcwd_utf8);
+use SplitAligner::Platform qw(native_windows windows_absolute_path assert_windows_path assert_windows_stat path_identity_key);
 
 our @EXPORT_OK = qw(
     assert_io_namespaces_disjoint
@@ -33,6 +34,7 @@ sub build_input_record {
     my $identity = _strict_existing_input_lookup(
         role => $role,
         path => $path,
+        snapshot_path => $arg{snapshot_path},
     );
 
     return {
@@ -302,6 +304,7 @@ sub _strict_existing_input_lookup {
     my $role = $arg{role} // '<unknown>';
     my $path = $arg{path};
     my $snapshot = $arg{snapshot};
+    assert_windows_path($path) if defined $path;
 
     _strict_input_lookup_failure($role, $path, 'missing', $snapshot)
         unless defined $path && $path ne '';
@@ -309,7 +312,11 @@ sub _strict_existing_input_lookup {
         if $path =~ /\x00/;
 
     my $fh;
-    unless (sysopen($fh, $path, O_RDONLY | O_NONBLOCK)) {
+    # Native Windows rejects device/UNC/reparse paths before this point;
+    # O_NONBLOCK is not a portable Win32 CRT constant. POSIX keeps its
+    # nonblocking open so FIFOs cannot hang preflight.
+    my $open_flags = O_RDONLY | (native_windows() ? 0 : Fcntl::O_NONBLOCK());
+    unless (sysopen($fh, $path, $open_flags)) {
         my $reason = "$!";
         _strict_input_lookup_failure(
             $role, $path, "direct-open-failed: $reason", $snapshot);
@@ -318,6 +325,7 @@ sub _strict_existing_input_lookup {
         $role, $path, "raw-mode-failed: $!", $snapshot, $fh);
 
     my @opened = stat($fh);
+    assert_windows_stat(\@opened, 'opened input');
     _strict_input_lookup_failure(
         $role, $path, "fstat-failed: $!", $snapshot, $fh)
         unless @opened;
@@ -332,6 +340,7 @@ sub _strict_existing_input_lookup {
         $role, $path, 'canonical-resolution-failed', $snapshot, $fh)
         unless defined $resolved;
     my @resolved = stat($resolved);
+    assert_windows_stat(\@resolved, 'resolved input');
     _strict_input_lookup_failure(
         $role, $path, 'resolved-stat-failed', $snapshot, $fh)
         unless @resolved;
@@ -345,7 +354,25 @@ sub _strict_existing_input_lookup {
     seek($fh, 0, 0) or _strict_input_lookup_failure(
         $role, $path, "seek-failed: $!", $snapshot, $fh);
     my $sha = Digest::SHA->new(256);
-    my $hashed = eval { $sha->addfile($fh); 1 };
+    # Freeze from the same validated descriptor and byte stream used for the
+    # input digest. Reopening the pathname here would reintroduce a race.
+    my $hashed = eval {
+        if (defined $arg{snapshot_path}) {
+            open my $snapshot_fh, '>:raw', $arg{snapshot_path}
+                or die "Cannot write private input snapshot: $!";
+            while (1) {
+                my $count = read($fh, my $buffer, 1024 * 1024);
+                die "Cannot read input for snapshot: $!" unless defined $count;
+                last if $count == 0;
+                $sha->add($buffer);
+                print {$snapshot_fh} $buffer or die "Cannot write private input snapshot: $!";
+            }
+            close $snapshot_fh or die "Cannot close private input snapshot: $!";
+        } else {
+            $sha->addfile($fh);
+        }
+        1;
+    };
     _strict_input_lookup_failure(
         $role, $path, "read-for-hash-failed: $@", $snapshot, $fh)
         unless $hashed;
@@ -387,7 +414,7 @@ sub _strict_input_lookup_failure {
     }
     $path = '<undefined>' unless defined $path;
     die "[ERROR] Cannot open input path for role '$role' path '$path'. "
-        . "Cannot resolve input path under strict POSIX lookup "
+        . "Cannot resolve input path under strict " . (native_windows() ? 'Windows' : 'POSIX') . " lookup "
         . "(reason: $reason).\n";
 }
 
@@ -628,14 +655,14 @@ sub _publication_transaction_parent_change_error {
 sub _input_destination_overlap {
     my ($input, $destination) = @_;
     return 'exact-path'
-        if $input->{canonical_path} eq $destination->{canonical_path};
+        if path_identity_key($input->{canonical_path}) eq path_identity_key($destination->{canonical_path});
     return 'exact-path'
         if defined $input->{display_absolute_path}
-            && $input->{display_absolute_path} eq $destination->{canonical_path};
+            && path_identity_key($input->{display_absolute_path}) eq path_identity_key($destination->{canonical_path});
     return 'resolved-path'
         if defined $input->{resolved_path}
             && defined $destination->{resolved_path}
-            && $input->{resolved_path} eq $destination->{resolved_path};
+            && path_identity_key($input->{resolved_path}) eq path_identity_key($destination->{resolved_path});
     return 'same-inode' if _same_inode($input, $destination);
 
     if ($destination->{type} eq 'directory') {
@@ -653,10 +680,10 @@ sub _input_destination_overlap {
 
 sub _destinations_overlap {
     my ($left, $right) = @_;
-    return 1 if $left->{canonical_path} eq $right->{canonical_path};
+    return 1 if path_identity_key($left->{canonical_path}) eq path_identity_key($right->{canonical_path});
     return 1 if defined $left->{resolved_path}
         && defined $right->{resolved_path}
-        && $left->{resolved_path} eq $right->{resolved_path};
+        && path_identity_key($left->{resolved_path}) eq path_identity_key($right->{resolved_path});
     return 1 if _same_inode($left, $right);
 
     if ($left->{type} eq 'directory') {
@@ -680,6 +707,14 @@ sub _destinations_overlap {
 
 sub _lexical_publication_absolute_path {
     my ($path) = @_;
+    if (native_windows()) {
+        assert_windows_path($path);
+        my $cwd = getcwd_utf8();
+        my $absolute = windows_absolute_path($path, $cwd);
+        die "[ERROR][Windows] Publication paths must use the working-directory drive letter; run from the output drive.\n"
+            unless lc(substr($absolute, 0, 2)) eq lc(substr($cwd, 0, 2));
+        return $absolute;
+    }
     die "[ERROR] Filesystem path contains a NUL byte.\n" if $path =~ /\x00/;
     my $absolute = File::Spec->file_name_is_absolute($path)
         ? $path
@@ -704,6 +739,7 @@ sub _lexical_publication_absolute_path {
 
 sub _absolute_path_as_provided_for_display {
     my ($path) = @_;
+    return windows_absolute_path($path, getcwd_utf8()) if native_windows();
     return $path if File::Spec->file_name_is_absolute($path);
     my $cwd = getcwd_utf8();
     return $cwd eq '/' ? "/$path" : "$cwd/$path";
@@ -741,6 +777,7 @@ sub _is_same_or_descendant {
 
 sub _path_components {
     my ($path) = @_;
+    $path = path_identity_key($path);
     return grep { $_ ne '' } split(m{/+}, $path, -1);
 }
 
@@ -748,6 +785,7 @@ sub _device_inode {
     my ($path) = @_;
     my @stat = stat($path);
     return (undef, undef) unless @stat;
+    assert_windows_stat(\@stat, $path);
     return (0 + $stat[0], 0 + $stat[1]);
 }
 

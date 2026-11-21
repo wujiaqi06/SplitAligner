@@ -23,7 +23,7 @@ const saf::Split& edge(const saf::Mapping&m,size_t i){if(i>=m.gene_splits().size
 void split_query(const saf::Split&s,uint64_t*out,size_t cap,size_t*count,saf_split_info*info){query(s.side,out,cap,count);if(info)*info={s.side_count,s.other_count,static_cast<uint8_t>(s.terminal)};}
 }
 extern "C" {
-const char*saf_version(void){return "SplitAlignerFast FAST002 ABI2 topology-support-v1 finite-double-v1";}
+const char*saf_version(void){return "SplitAlignerFast 0.2.0-rc.3 FAST002 ABI2 topology-support-v1 finite-double-v1";}
 const char*saf_last_error(void){return error_text;}
 saf_status saf_reference_create(size_t nt,const char*universe,const int64_t*p,const int64_t*t,size_t nn,saf_reference**out){if(out)*out=nullptr;return guard([&]{if(!out)invalid("out_handle required");auto plan=saf::Reference::create(nt,universe,p,t,nn);*out=new saf_reference{std::move(plan)};});}
 void saf_reference_destroy(saf_reference*h){guard([&]{delete h;});}

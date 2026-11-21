@@ -130,8 +130,9 @@ expect_rejection gene_alias "$CASE" "reason: exact-path" \
     perl "$SA" --mode matrix --species species.nwk --gene x.matrix_with_fuse.txt --label x --force
 [[ "$(sha256 "$CASE/x.matrix_with_fuse.txt")" == "$before" ]] || fail "gene input changed"
 
-# RECERT005-03: both matrix-owned output directories protect nested inputs.
-for suffix in splits split_branch_label; do
+# RECERT005-03: the current aggregate directory protects nested inputs.
+# The v1 _splits directory was replaced by three compact file destinations.
+for suffix in split_branch_label; do
     CASE="$TMP/03_directory_$suffix"
     mkdir -p "$CASE/x_$suffix"
     cp "$SEED/species.nwk" "$CASE/species.nwk"
@@ -140,6 +141,45 @@ for suffix in splits split_branch_label; do
     expect_rejection "directory_$suffix" "$CASE" "reason: inside-output-directory" \
         perl "$SA" --mode matrix --species species.nwk --gene "x_$suffix/genes.nwk" --label x --force
     [[ "$(sha256 "$CASE/x_$suffix/genes.nwk")" == "$before" ]] || fail "nested gene input changed"
+done
+
+# RECERT005-03b: each compact artifact protects input identity, for all three
+# supported alias forms. These checks replace the removed per-gene directory
+# assumption without bypassing the later finalizer/Support/rollback cases.
+for suffix in compact.jsonl compact.index.json taxon_dictionary.json; do
+    for alias in exact symlink hardlink; do
+        CASE="$TMP/03_compact_${suffix}_$alias"
+        mkdir -p "$CASE"
+        cp "$SEED/species.nwk" "$CASE/species.nwk"
+        cp "$SEED/genes.nwk" "$CASE/genes.nwk"
+        gene=genes.nwk
+        case "$alias" in
+            exact)
+                cp "$CASE/genes.nwk" "$CASE/x.$suffix"
+                gene="x.$suffix"
+                reason=exact-path
+                ;;
+            symlink)
+                ln -s genes.nwk "$CASE/x.$suffix"
+                reason=resolved-path
+                ;;
+            hardlink)
+                ln "$CASE/genes.nwk" "$CASE/x.$suffix"
+                reason=same-inode
+                ;;
+        esac
+        before="$(sha256 "$CASE/$gene")"
+        snapshot_outputs "$CASE" "$TMP/03_before.sha256"
+        expect_rejection "compact_${suffix}_$alias" "$CASE" "reason: $reason" \
+            perl "$SA" --mode matrix --species species.nwk --gene "$gene" --label x --force
+        [[ "$(sha256 "$CASE/$gene")" == "$before" ]] || fail "compact alias input changed"
+        snapshot_outputs "$CASE" "$TMP/03_after.sha256"
+        cmp "$TMP/03_before.sha256" "$TMP/03_after.sha256" || fail "compact alias changed existing files"
+        [[ $alias != symlink || -L "$CASE/x.$suffix" ]] || fail "compact destination symlink was replaced"
+        if [[ $alias == hardlink ]]; then
+            [[ "$CASE/genes.nwk" -ef "$CASE/x.$suffix" ]] || fail "compact hardlink identity changed"
+        fi
+    done
 done
 
 # RECERT005-04: destination symlink resolves to an input.
@@ -270,21 +310,23 @@ expect_rejection duplicate_destinations "$CASE" "reason: duplicate-destination" 
 
 # RECERT005-13: Unicode CWD, label, absolute path, and decoded diagnostic.
 CASE="$TMP/13_ユニコード_路径"
-mkdir -p "$CASE/标签_splits"
+mkdir -p "$CASE/标签_split_branch_label"
 cp "$SEED/species.nwk" "$CASE/物种.nwk"
-cp "$SEED/genes.nwk" "$CASE/标签_splits/基因.nwk"
-before="$(sha256 "$CASE/标签_splits/基因.nwk")"
+cp "$SEED/genes.nwk" "$CASE/标签_split_branch_label/基因.nwk"
+before="$(sha256 "$CASE/标签_split_branch_label/基因.nwk")"
 expect_rejection unicode_directory_alias "$CASE" "reason: inside-output-directory" \
     perl "$SA" --mode matrix \
-    --species "$CASE/物种.nwk" --gene "$CASE/标签_splits/基因.nwk" \
+    --species "$CASE/物种.nwk" --gene "$CASE/标签_split_branch_label/基因.nwk" \
     --label 标签 --force
-grep -Fq '标签_splits/基因.nwk' "$CASE/unicode_directory_alias.stderr.txt" ||
+grep -Fq '标签_split_branch_label/基因.nwk' "$CASE/unicode_directory_alias.stderr.txt" ||
     fail "Unicode diagnostic was not decoded exactly"
-[[ "$(sha256 "$CASE/标签_splits/基因.nwk")" == "$before" ]] || fail "Unicode input changed"
+[[ "$(sha256 "$CASE/标签_split_branch_label/基因.nwk")" == "$before" ]] || fail "Unicode input changed"
 
 # RECERT005-14: benign --force replaces outputs while preserving inputs.
 CASE="$TMP/14_benign_force"
-mkdir -p "$CASE"
+mkdir -p "$CASE/x_splits/nested"
+printf 'Unowned legacy-name directory: preserve this user file.\n' >"$CASE/x_splits/nested/user.txt"
+legacy_before="$(sha256 "$CASE/x_splits/nested/user.txt")"
 cp "$SEED/species.nwk" "$CASE/species.nwk"
 cp "$SEED/genes.nwk" "$CASE/genes.nwk"
 (
@@ -304,7 +346,8 @@ gene_before="$(sha256 "$CASE/genes.nwk")"
 [[ "$(sha256 "$CASE/species.nwk")" == "$species_before" ]] || fail "benign force changed species input"
 [[ "$(sha256 "$CASE/genes.nwk")" == "$gene_before" ]] || fail "benign force changed gene input"
 [[ "$(sha256 "$CASE/x.matrix_with_fuse.txt")" != "$first_matrix" ]] || fail "benign force did not replace outputs"
-pass "benign --force replacement"
+[[ "$(sha256 "$CASE/x_splits/nested/user.txt")" == "$legacy_before" ]] || fail "v2 touched an unowned legacy-name directory"
+pass "benign --force replacement (unowned legacy-name directory preserved)"
 
 # RECERT005-15: a publication-time permission failure rolls back all prior outputs.
 CASE="$TMP/15_publish_rollback"

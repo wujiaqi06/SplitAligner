@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Exporter qw(import);
 use Scalar::Util qw(refaddr);
+use POSIX qw(isfinite);
 use SplitAligner::TextIO qw(
     decode_utf8_strict
     encode_utf8_strict
@@ -19,6 +20,8 @@ our @EXPORT_OK = qw(
     canonicalize_split
     edge_records
     gene_split_records
+    format_pooled_length
+    sum_component_lengths
     is_numeric_value
     parse_gene_tree_file
     parse_labeled_species_tree_file
@@ -34,7 +37,7 @@ our @EXPORT_OK = qw(
     validate_gene_taxa
 );
 
-my $NUMERIC_RE = qr/[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
+my $NUMERIC_RE = qr/[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/;
 my $STRUCTURED_SPLIT_PREFIX = 'HX1:';
 my $STRUCTURED_SET_PREFIX = 'HS1:';
 
@@ -42,6 +45,30 @@ sub is_numeric_value {
     my ($value) = @_;
     return 0 unless defined $value;
     return $value =~ /\A$NUMERIC_RE\z/ ? 1 : 0;
+}
+
+# Perl's default NV stringification may lose binary64 precision when a number
+# passes through an intermediate split file. Keep ordinary decimal cases short.
+sub format_pooled_length {
+    my ($number) = @_;
+    die "[ERROR] Pooled unrooted branch length is not finite in double precision.\n"
+        unless isfinite($number);
+    for my $digits (15, 16, 17) {
+        my $text = sprintf('%.*g', $digits, $number);
+        return $text if 0 + $text == $number;
+    }
+    die "[ERROR] Cannot serialize pooled branch length.\n";
+}
+
+# A Perl scalar can otherwise hold an exact 64-bit integer and defer rounding
+# across several additions. Match the binary64 inputs and additions of R/C++.
+sub sum_component_lengths {
+    my @values = map { unpack('d', pack('d', $_)) } @_;
+    my $sum = 0;
+    for my $value (sort { abs($a) <=> abs($b) || $a <=> $b } @values) {
+        $sum = unpack('d', pack('d', $sum + $value));
+    }
+    return $sum;
 }
 
 sub parse_species_tree_file {
@@ -233,24 +260,23 @@ sub edge_records {
     my ($root) = @_;
     my @all_tips = sort(tip_labels($root));
     my %descendant_tips;
-    my $cache_descendants;
-    $cache_descendants = sub {
-        my ($node) = @_;
+    my @nodes = _all_nodes_preorder($root);
+    # Reverse preorder visits every child before its parent. A lexical
+    # recursive coderef would retain itself and its captured caches.
+    for my $node (reverse @nodes) {
         my @tips;
         if (@{$node->{children}}) {
-            push @tips, @{ $cache_descendants->($_) } for @{$node->{children}};
+            push @tips, @{ $descendant_tips{refaddr($_)} } for @{$node->{children}};
             @tips = sort @tips;
         } else {
             @tips = ($node->{label});
         }
         $descendant_tips{refaddr($node)} = \@tips;
-        return \@tips;
-    };
-    $cache_descendants->($root);
+    }
 
     my @records;
 
-    for my $node (_all_nodes_preorder($root)) {
+    for my $node (@nodes) {
         next if $node == $root;
         my @left = @{ $descendant_tips{refaddr($node)} };
         my %left = map { $_ => 1 } @left;
@@ -295,7 +321,10 @@ sub gene_split_records {
     my ($root) = @_;
     my $edges = edge_records($root);
     my %by_split;
-    for my $edge (@{$edges}) {
+    # Position of the child in Newick preorder; the display root is zero.
+    for my $i (0 .. $#{$edges}) {
+        my $edge = $edges->[$i];
+        $edge->{source_node} = $i + 1;
         push @{ $by_split{$edge->{split}} }, $edge;
     }
 
@@ -309,22 +338,16 @@ sub gene_split_records {
                 ? $members[0]{value}
                 : 'NA';
         } else {
-            my $sum = 0;
-            my $complete = 1;
-            for my $member (@members) {
-                if (!defined $member->{value} || !is_numeric_value($member->{value})) {
-                    $complete = 0;
-                    last;
-                }
-                $sum += 0 + $member->{value};
-            }
-            $value = $complete ? $sum : 'NA';
+            my @values = map { $_->{value} } @members;
+            $value = grep({ !is_numeric_value($_) } @values) ? 'NA'
+                : format_pooled_length(sum_component_lengths(@values));
         }
 
         push @records, {
             split           => $split,
             value           => $value,
             component_count => scalar(@members),
+            source_nodes    => [ map { $_->{source_node} } @members ],
         };
     }
     return \@records;
@@ -381,17 +404,17 @@ sub serialize_branch_subtree {
 
 sub _serialize_node {
     my ($root, $decorator) = @_;
-    my $walk;
-    $walk = sub {
-        my ($node, $is_root) = @_;
-        my $body = '';
-        if (@{$node->{children}}) {
-            $body = '(' . join(',', map { $walk->($_, 0) } @{$node->{children}}) . ')';
-        }
-        my ($label, $suffix) = $decorator->($node, $is_root);
-        return $body . ($label // '') . ($suffix // '');
-    };
-    return $walk->($root, 1);
+    return _serialize_walk($root, 1, $decorator);
+}
+
+sub _serialize_walk {
+    my ($node, $is_root, $decorator) = @_;
+    my $body = '';
+    if (@{$node->{children}}) {
+        $body = '(' . join(',', map { _serialize_walk($_, 0, $decorator) } @{$node->{children}}) . ')';
+    }
+    my ($label, $suffix) = $decorator->($node, $is_root);
+    return $body . ($label // '') . ($suffix // '');
 }
 
 sub _parse_subtree {
@@ -432,6 +455,14 @@ sub _parse_subtree {
         if ($state->{allow_branch_tags} && $value =~ /^B\d+$/) {
             $node->{branch_id} = $value;
         } elsif (is_numeric_value($value)) {
+            # Match the native core's binary64 input range. Preserve the token
+            # for direct output, but reject overflow and nonzero underflow.
+            my $number = unpack('d', pack('d', $value));
+            _error($state, "Branch length '$value' is not finite in double precision.")
+                unless isfinite($number);
+            my ($significand) = split(/[eE]/, $value);
+            _error($state, "Branch length '$value' underflows to zero in double precision.")
+                if $number == 0 && $significand =~ /[1-9]/;
             $node->{length_raw} = $value;
         } else {
             _error($state, "Invalid branch value '$value'; expected a finite numeric value"
@@ -462,43 +493,35 @@ sub _read_required_token {
 
 sub _leaf_nodes {
     my ($root) = @_;
-    my @nodes;
-    my $walk;
-    $walk = sub {
-        my ($node) = @_;
-        if (!@{$node->{children}}) {
-            push @nodes, $node;
-            return;
-        }
-        $walk->($_) for @{$node->{children}};
-    };
-    $walk->($root);
-    return @nodes;
+    return grep { !@{$_->{children}} } _all_nodes_preorder($root);
 }
 
 sub _postorder_internal_nodes {
     my ($root) = @_;
-    my @nodes;
-    my $walk;
-    $walk = sub {
-        my ($node) = @_;
-        $walk->($_) for @{$node->{children}};
-        push @nodes, $node if @{$node->{children}};
-    };
-    $walk->($root);
+    my (@nodes, @stack);
+    push @stack, [$root, 0];
+    while (@stack) {
+        my ($node, $visited) = @{pop @stack};
+        next unless @{$node->{children}};
+        if ($visited) {
+            push @nodes, $node;
+        } else {
+            push @stack, [$node, 1];
+            push @stack, map { [$_, 0] } reverse @{$node->{children}};
+        }
+    }
     return @nodes;
 }
 
 sub _all_nodes_preorder {
     my ($root) = @_;
-    my @nodes;
-    my $walk;
-    $walk = sub {
-        my ($node) = @_;
+    my (@nodes, @stack);
+    push @stack, $root;
+    while (@stack) {
+        my $node = pop @stack;
         push @nodes, $node;
-        $walk->($_) for @{$node->{children}};
-    };
-    $walk->($root);
+        push @stack, reverse @{$node->{children}};
+    }
     return @nodes;
 }
 

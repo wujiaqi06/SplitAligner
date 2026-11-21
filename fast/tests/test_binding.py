@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded Python 3.8 ABI tests; Linux only, SAF_LIBRARY required."""
+"""Bounded Python 3.8 ABI tests; native Unix library via SAF_LIBRARY."""
 import ctypes as C
 import copy
 import math

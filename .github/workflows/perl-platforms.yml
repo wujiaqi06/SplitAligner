@@ -1,0 +1,57 @@
+name: Perl platform checks
+
+on:
+  push:
+    branches: [main]
+    tags: ['v2.*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  perl:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+          distribution: strawberry
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Record Perl environment
+        run: perl -V
+      - name: Portable regressions and publication guards
+        if: runner.os != 'Windows'
+        env:
+          LC_ALL: C
+        run: |
+          prove -v tests/windows_platform/run.pl tests/compact_kernel/run.pl tests/materialized_spool/run.pl tests/materialized_spool/utf8_bytes.pl
+          perl tests/compact_publication/run.pl
+          python tests/windows_platform/smoke.py --work-dir "$RUNNER_TEMP/perl-smoke"
+          python tests/compact_diagnostics/run.py --work-dir "$RUNNER_TEMP/perl-diagnostics"
+      - name: Native Windows checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tests/windows_platform/run-native.ps1 -WorkDir "$env:RUNNER_TEMP/perl-native"
+          python ./tests/compact_diagnostics/run.py --work-dir "$env:RUNNER_TEMP/perl-diagnostics"
+          if ($LASTEXITCODE -ne 0) { throw 'Gene diagnostic regression failed.' }
+      - name: Retain native Windows evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: perl-windows-evidence
+          path: |
+            ${{ runner.temp }}/perl-native/*.log
+            ${{ runner.temp }}/perl-native/RESULT*
+            ${{ runner.temp }}/perl-native/smoke space/RESULTS.json
+            ${{ runner.temp }}/perl-diagnostics/RESULTS.json

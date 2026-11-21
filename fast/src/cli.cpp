@@ -1,15 +1,15 @@
 #include "adapter.hpp"
+#include "platform.hpp"
 #include "splitaligner/fast_c_api.h"
+#include <cerrno>
 #include <chrono>
+#include <system_error>
 #include <deque>
 #include <filesystem>
 #include <iostream>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
-#include <sys/syscall.h>
-#include <unistd.h>
-#include <fcntl.h>
 namespace fs=std::filesystem;
 using namespace safio;
 using Clock=std::chrono::steady_clock;
@@ -28,19 +28,117 @@ struct Values{std::vector<double>v;std::vector<uint8_t>a;explicit Values(size_t 
 static void value_json(std::ostream&o,const Values&v,size_t i){bool has=i<v.a.size()&&v.a[i];o<<"\"value\":";if(has)o<<v.v[i];else o<<"null";o<<",\"numeric_available\":"<<(has?"true":"false");}
 struct Edge{std::string hex;std::vector<size_t>sources;};
 static std::vector<Edge> edge_queries(saf_mapping*m,size_t n){std::vector<Edge>es;for(size_t e=0;e<n;++e){auto w=query<uint64_t>([&](auto a,auto b,auto c){return saf_mapping_gene_split(m,e,a,b,c,nullptr);});auto s=query<size_t>([&](auto a,auto b,auto c){return saf_mapping_gene_sources(m,e,a,b,c);});es.push_back({bits_hex(w),std::move(s)});}return es;}
-struct Options{std::string reference,genes,taxa,out,scope="full",role="free",format="tsv",inject,unmatched="default";bool numeric=true;};
-static Options options(int argc,char**argv){Options o;std::set<std::string>seen;for(int i=1;i<argc;++i){std::string k=argv[i];if(!seen.insert(k).second)throw std::runtime_error("duplicate option "+k);if(k=="--no-numeric"){o.numeric=false;continue;}if(i+1==argc)throw std::runtime_error("missing option value "+k);std::string v=argv[++i];if(k=="--reference")o.reference=v;else if(k=="--genes")o.genes=v;else if(k=="--taxa")o.taxa=v;else if(k=="--out")o.out=v;else if(k=="--scope")o.scope=v;else if(k=="--role")o.role=v;else if(k=="--gene-format")o.format=v;else if(k=="--unmatched-splits"){if(v!="on"&&v!="off")throw std::runtime_error("--unmatched-splits requires on or off");o.unmatched=v;}else if(k=="--inject-io-failure")o.inject=v;else throw std::runtime_error("unknown option "+k);}if(o.reference.empty()||o.out.empty())throw std::runtime_error("--reference and --out required");if(o.scope!="matrix"&&o.scope!="full"&&o.scope!="support"&&o.scope!="truth")throw std::runtime_error("invalid scope");if(o.unmatched=="on"&&o.scope!="full"&&o.scope!="support")throw std::runtime_error("--unmatched-splits on requires full or support scope");if(o.role!="fixed"&&o.role!="free")throw std::runtime_error("invalid role");if(o.scope=="support"&&o.role!="free")throw std::runtime_error("support requires free role");if(o.scope=="truth"){o.numeric=false;if(o.taxa.empty()||!o.genes.empty())throw std::runtime_error("truth requires --taxa only");}else if(o.genes.empty()||!o.taxa.empty())throw std::runtime_error("mapping requires --genes only");if(o.scope=="support")o.numeric=false;if(o.format!="tsv"&&o.format!="prefix-newick")throw std::runtime_error("invalid gene format");if(!o.inject.empty()&&o.inject!="read"&&o.inject!="write"&&o.inject!="close")throw std::runtime_error("invalid I/O injection");return o;}
+#include "fusion_matrix.hpp"
+struct Options{std::string reference,genes,taxa,out,scope="full",role="free",format="tsv",inject,unmatched="default",fusion_view="whole";bool numeric=true;};
+static Options options(int argc,char**argv){Options o;std::set<std::string>seen;for(int i=1;i<argc;++i){std::string k=argv[i];if(!seen.insert(k).second)throw std::runtime_error("duplicate option "+k);if(k=="--no-numeric"){o.numeric=false;continue;}if(i+1==argc)throw std::runtime_error("missing option value "+k);std::string v=argv[++i];if(k=="--reference")o.reference=v;else if(k=="--genes")o.genes=v;else if(k=="--taxa")o.taxa=v;else if(k=="--out")o.out=v;else if(k=="--scope")o.scope=v;else if(k=="--role")o.role=v;else if(k=="--gene-format")o.format=v;else if(k=="--unmatched-splits"){if(v!="on"&&v!="off")throw std::runtime_error("--unmatched-splits requires on or off");o.unmatched=v;}else if(k=="--fusion-view"){if(v!="whole"&&v!="direct"&&v!="off")throw std::runtime_error("--fusion-view requires whole, direct or off");o.fusion_view=v;}else if(k=="--inject-io-failure")o.inject=v;else throw std::runtime_error("unknown option "+k);}if(o.reference=="-")throw std::runtime_error("reference must be a file; stdin is supported only for genes or taxa");if(o.reference.empty()||o.out.empty())throw std::runtime_error("--reference and --out required");if(o.scope!="matrix"&&o.scope!="full"&&o.scope!="support"&&o.scope!="truth")throw std::runtime_error("invalid scope");if(o.unmatched=="on"&&o.scope!="full"&&o.scope!="support")throw std::runtime_error("--unmatched-splits on requires full or support scope");if(o.role!="fixed"&&o.role!="free")throw std::runtime_error("invalid role");if(o.scope=="truth"){o.numeric=false;if(o.taxa.empty()||!o.genes.empty())throw std::runtime_error("truth requires --taxa only");}else if(o.genes.empty()||!o.taxa.empty())throw std::runtime_error("mapping requires --genes only");if(o.scope=="support")o.numeric=false;if(o.format!="tsv"&&o.format!="prefix-newick")throw std::runtime_error("invalid gene format");if(!o.inject.empty()&&o.inject!="read"&&o.inject!="write"&&o.inject!="close")throw std::runtime_error("invalid I/O injection");return o;}
 static void table_values(std::ostream&o,const std::string&id,const Values&v){o<<id;for(size_t a=0;a<v.v.size();++a){o<<'\t';if(v.a[a])o<<v.v[a];else o<<"NA";}o<<'\n';}
-static void checked_file(const fs::path&p,const std::string&s){std::ofstream f(p,std::ios::binary);f<<s;f.flush();if(!f)throw std::runtime_error("file write: "+p.string());f.close();if(f.fail())throw std::runtime_error("file close: "+p.string());}
+static void checked_file(const fs::path&p,const std::string&s){std::ofstream f(p,std::ios::binary);f<<s;f.flush();if(!f)throw std::runtime_error("file write: "+p.u8string());f.close();if(f.fail())throw std::runtime_error("file close: "+p.u8string());}
+static Tree read_reference(const std::string& path, InputDigest& hash) {
+ std::string text;
+ read_chunks(path,[&](const char* bytes,size_t n){hash.add(bytes,n);text.append(bytes,n);});
+ strip_initial_bom(text);
+ return Parser(text).parse();
+}
+static void input_record(std::ostream& out,const std::string& name,InputDigest& hash) {
+ const auto path=name=="-" ? name : fs::absolute(fs::u8path(name)).u8string();
+ out<<"{\"path\":"<<json(path);
+ if(!utf8(path))out<<",\"path_bytes_hex\":"<<json(hex_bytes(reinterpret_cast<const unsigned char*>(path.data()),path.size()));
+ out<<",\"bytes\":"<<hash.size()<<",\"sha256\":"<<json(hash.finish())<<'}';
+}
+static void write_tip_label(std::ostream& out, const Node& tip) {
+    // Preserve input quoting: a reader may translate unquoted underscores
+    // into spaces, or keep quote delimiters as part of its tip labels.
+    if (!tip.tip_was_quoted && tip.label.find('\'') == std::string::npos) {
+        out << tip.label;
+        return;
+    }
+    out << '\'';
+    for (char c : tip.label) {
+        if (c == '\'') out << '\'';
+        out << c;
+    }
+    out << '\'';
+}
+
+static void write_support_tree(std::ostream& out, const Tree& tree,
+                               const std::vector<std::string>& labels) {
+    struct Frame { size_t node; size_t next_child; };
+    std::vector<Frame> stack{{tree.root, 0}};
+    while (!stack.empty()) {
+        auto& frame = stack.back();
+        const auto& node = tree.nodes[frame.node];
+        if (frame.next_child < node.children.size()) {
+            out << (frame.next_child == 0 ? '(' : ',');
+            const auto child = node.children[frame.next_child++];
+            stack.push_back({child, 0});
+            continue;
+        }
+        if (node.children.empty()) {
+            write_tip_label(out, node);
+        } else {
+            out << ')' << labels[frame.node];
+        }
+        if (node.has_length && !missing(node.length)) out << ':' << node.length;
+        stack.pop_back();
+    }
+    out << ";\n";
+}
+
+static void write_support(Writers& writers, saf_support* support,
+                          const Tree& reference, const std::vector<Edge>& axes,
+                          const std::vector<bool>& terminal) {
+    auto counts = query<saf_support_count>([&](auto out, auto capacity, auto written) {
+        return saf_support_read(support, out, capacity, written);
+    });
+    auto& table = writers.get("support.tsv");
+    table << "axis_id\tbranch_type\tn_valid_topologies\tn_struct\tn_fused\t"
+             "n_dec\tn_rec\tn_not_recovered\tsupport_fraction\tsupport_percent\n";
+    std::vector<std::string> node_labels(reference.nodes.size());
+    for (size_t axis = 0; axis < counts.size(); ++axis) {
+        const auto& count = counts[axis];
+        table << axis << '\t' << (terminal[axis] ? "terminal" : "internal") << '\t'
+              << count.n_valid_topologies << '\t' << count.n_struct << '\t' << count.n_fused
+              << '\t' << count.n_dec << '\t' << count.n_rec << '\t' << count.n_not_recovered;
+        if (count.n_dec == 0) {
+            table << "\tNA\tNA\n";
+            continue;
+        }
+        std::ostringstream percent;
+        percent.imbue(std::locale::classic());
+        percent << std::setprecision(17) << 100.0 * double(count.n_rec) / count.n_dec;
+        const auto label = percent.str();
+        table << '\t' << double(count.n_rec) / count.n_dec << '\t' << label << '\n';
+        if (!terminal[axis]) {
+            // The two children of a degree-two display root can represent
+            // the same unrooted edge. Both get the label of this single row.
+            for (auto node : axes[axis].sources) node_labels.at(node) = label;
+        }
+    }
+    write_support_tree(writers.get("support.nwk"), reference, node_labels);
+}
+
 static int run(const Options&o){
  auto started=Clock::now();std::map<std::string,double>phase;for(auto k:{"parse","reference_prepare","coverage_prepare","mapping_prepare","apply","serialize_write","manifest_hash"})phase[k]=0;
- fs::path out=fs::absolute(o.out),stage=out.parent_path()/("."+out.filename().string()+".staging."+std::to_string(getpid()));
+#if defined(__APPLE__) || defined(_WIN32)
+ // macOS exposes an executable pathname rather than Linux's open-image procfs
+ // handle. Capture its digest before reading inputs, so later path replacement
+ // during a long run cannot change the recorded executable identity.
+ auto binary_hash_tick=Clock::now();
+ const std::string startup_binary_digest=file_digest(safplatform::executable_path());
+ phase["manifest_hash"]+=elapsed(binary_hash_tick);
+#endif
+ fs::path out=fs::absolute(fs::u8path(o.out));
+ while(!out.has_filename() && out!=out.root_path())out=out.parent_path();
+ if(!fs::is_directory(out.parent_path()))throw std::runtime_error("output parent directory must exist: "+out.parent_path().u8string());
+ const fs::path stage=out.parent_path()/fs::u8path("."+out.filename().u8string()+".staging."+std::to_string(safplatform::process_id()));
  if(fs::symlink_status(out).type()!=fs::file_type::not_found)throw std::runtime_error("output already exists");
  if(!fs::create_directory(stage))throw std::runtime_error("cannot create fresh staging directory");
  try{
- Writers w{stage,{},o.inject};auto tick=Clock::now();Tree reference=Parser(read_all(o.reference)).parse();auto names=leaves(reference);std::map<std::string,size_t>ids;std::string dictionary;for(size_t i=0;i<names.size();++i){ids[names[i]]=i;dictionary+=std::to_string(names[i].size())+":"+names[i];}std::string universe=digest(dictionary);std::vector<int64_t>rp,rt;std::vector<uint64_t>rm;arrays(reference,ids,rp,rt,rm);phase["parse"]+=elapsed(tick);tick=Clock::now();saf_reference*rawref=nullptr;ok(saf_reference_create(names.size(),universe.c_str(),rp.data(),rt.data(),rp.size(),&rawref));std::unique_ptr<saf_reference,decltype(&saf_reference_destroy)>ref(rawref,saf_reference_destroy);saf_reference_info ri;ok(saf_reference_get_info(ref.get(),&ri));std::vector<Edge>axes;std::vector<bool>terminal;std::string refbind=universe;for(size_t a=0;a<ri.n_axes;++a){saf_split_info si;auto bits=query<uint64_t>([&](auto x,auto y,auto z){return saf_reference_axis(ref.get(),a,x,y,z,&si);});auto sources=query<size_t>([&](auto x,auto y,auto z){return saf_reference_sources(ref.get(),a,x,y,z);});axes.push_back({bits_hex(bits),std::move(sources)});terminal.push_back(si.terminal);refbind+=axes.back().hex;}std::string refid=digest(refbind);phase["reference_prepare"]+=elapsed(tick);
+ Writers w{stage,{},o.inject};auto tick=Clock::now();InputDigest reference_hash,rows_hash;Tree reference=read_reference(o.reference,reference_hash);auto names=leaves(reference);std::map<std::string,size_t>ids;std::string dictionary;for(size_t i=0;i<names.size();++i){ids[names[i]]=i;dictionary+=std::to_string(names[i].size())+":"+names[i];}std::string universe=digest(dictionary);std::vector<int64_t>rp,rt;std::vector<uint64_t>rm;arrays(reference,ids,rp,rt,rm);phase["parse"]+=elapsed(tick);tick=Clock::now();saf_reference*rawref=nullptr;ok(saf_reference_create(names.size(),universe.c_str(),rp.data(),rt.data(),rp.size(),&rawref));std::unique_ptr<saf_reference,decltype(&saf_reference_destroy)>ref(rawref,saf_reference_destroy);saf_reference_info ri;ok(saf_reference_get_info(ref.get(),&ri));std::vector<Edge>axes;std::vector<bool>terminal;std::string refbind=universe;for(size_t a=0;a<ri.n_axes;++a){saf_split_info si;auto bits=query<uint64_t>([&](auto x,auto y,auto z){return saf_reference_axis(ref.get(),a,x,y,z,&si);});auto sources=query<size_t>([&](auto x,auto y,auto z){return saf_reference_sources(ref.get(),a,x,y,z);});axes.push_back({bits_hex(bits),std::move(sources)});terminal.push_back(si.terminal);refbind+=axes.back().hex;}std::string refid=digest(refbind);phase["reference_prepare"]+=elapsed(tick);
  tick=Clock::now();auto&ctx=w.get("context.json");ctx<<"{\"schema\":\"SplitAlignerFast-R2-v1\",\"scope\":"<<json(o.scope)<<",\"role\":"<<json(o.role)<<",\"numeric\":"<<(o.numeric?"true":"false")<<",\"universe_id\":"<<json(universe)<<",\"reference_id\":"<<json(refid)<<",\"taxa\":[";for(size_t i=0;i<names.size();++i){if(i)ctx<<',';ctx<<json(names[i]);}ctx<<"],\"axes\":[";for(size_t a=0;a<axes.size();++a){if(a)ctx<<',';ctx<<"{\"id\":"<<a<<",\"split_hex\":"<<json(axes[a].hex)<<",\"terminal\":"<<(terminal[a]?"true":"false")<<",\"source_nodes\":";array(ctx,axes[a].sources);ctx<<'}';}ctx<<"],\"reference_nodes\":";annotations(ctx,reference);ctx<<"}\n";
  bool truth=o.scope=="truth",full=o.scope=="full"||o.scope=="support",matrix=o.scope=="full"||o.scope=="matrix";
+ std::unique_ptr<fusion_matrix::Assembly> fusion;
+ if(matrix && o.numeric && o.fusion_view!="off") fusion=std::make_unique<fusion_matrix::Assembly>(stage,ri.n_axes);
  const bool write_unmatched=full&&o.unmatched!="off";
  uint64_t total_absent=0,total_unmatched=0;
  w.get("genes.tsv")<<"gene_idx\tgene_id\tcoverage_id\tnode_count\tstatus\n";
@@ -48,10 +146,21 @@ static int run(const Options&o){
  if(full||truth)w.get("coverage.jsonl");
  if(full){w.get("mapping.jsonl");w.get("composites.jsonl");}
  if(write_unmatched){w.get("unmatched.jsonl");w.get("unmatched.index.tsv")<<"gene_idx\tgene_id\tcoverage_id\toffset\tbyte_length\tn_reference_absent\tn_gene_unmatched\tstatus\n";}
- std::unique_ptr<saf_support,decltype(&saf_support_destroy)>support(nullptr,saf_support_destroy);if(full&&o.role=="free"){saf_support*s=nullptr;ok(saf_support_create(ref.get(),"gene_topology_observation","input_file",&s));support.reset(s);}
+ std::unique_ptr<saf_support, decltype(&saf_support_destroy)> support(nullptr, saf_support_destroy);
+ if (!truth) {
+  saf_support* accumulator = nullptr;
+  ok(saf_support_create(ref.get(), "gene_topology_observation", "input_file", &accumulator));
+  support.reset(accumulator);
+ }
  phase["serialize_write"]+=elapsed(tick);
- std::ifstream input(truth?o.taxa:o.genes,std::ios::binary);if(!input)throw std::runtime_error("input open failed");std::unordered_set<std::string>geneids,emitted;std::unordered_map<std::string,std::shared_ptr<Coverage>>cache;std::deque<std::string>fifo;size_t count=0,cache_hits=0,cache_misses=0;std::string line;
- for(;;){tick=Clock::now();if(!std::getline(input,line)){phase["parse"]+=elapsed(tick);break;}if(blank(line)){phase["parse"]+=elapsed(tick);continue;}if(!line.empty()&&line.back()=='\r')line.pop_back();std::string id;Tree tree;std::vector<int64_t>parent,taxon;std::vector<uint64_t>mask(ri.n_words,0);
+ safplatform::LineInput input(truth?o.taxa:o.genes);std::unordered_set<std::string>geneids,emitted;std::unordered_map<std::string,std::shared_ptr<Coverage>>cache;std::deque<std::string>fifo;size_t count=0,cache_hits=0,cache_misses=0;std::string line;
+ bool first_line=true;
+ for(;;){tick=Clock::now();if(!input.next(line)){phase["parse"]+=elapsed(tick);break;}
+ // getline removes LF when present. Keep CR, blank lines, and a possible BOM in the raw-input digest.
+ rows_hash.add(line.data(),line.size());
+ if(input.had_newline())rows_hash.add("\n",1);
+ if(first_line){strip_initial_bom(line);first_line=false;}
+ if(blank(line)){phase["parse"]+=elapsed(tick);continue;}if(!line.empty()&&line.back()=='\r')line.pop_back();std::string id;Tree tree;std::vector<int64_t>parent,taxon;std::vector<uint64_t>mask(ri.n_words,0);
  if(truth){size_t split=line.find('\t');id=line.substr(0,split);identity(id,"gene ID");if(split!=std::string::npos){size_t pos=split+1;if(pos==line.size())throw std::runtime_error("empty truth taxon");while(pos<line.size()){size_t end=line.find('\t',pos);std::string name=line.substr(pos,end==std::string::npos?end:end-pos);identity(name,"taxon");auto it=ids.find(name);if(it==ids.end())throw std::runtime_error("unknown taxon: "+name);size_t t=it->second;if(mask[t/64]&(uint64_t(1)<<(t%64)))throw std::runtime_error("duplicate truth taxon");mask[t/64]|=uint64_t(1)<<(t%64);if(end==std::string::npos)break;pos=end+1;if(pos==line.size())throw std::runtime_error("empty truth taxon");}}}
  else{auto pair=gene_line(line,o.format=="prefix-newick");id=std::move(pair.first);tree=Parser(pair.second).parse();arrays(tree,ids,parent,taxon,mask);}
  if(!geneids.insert(id).second)throw std::runtime_error("duplicate gene ID: "+id);phase["parse"]+=elapsed(tick);tick=Clock::now();std::string key=bits_hex(mask);std::shared_ptr<Coverage>cov;auto found=cache.find(key);if(found!=cache.end()){cov=found->second;++cache_hits;}else{cov=prepare_cov(ref.get(),mask,ri.n_axes);if(cache.size()==64){cache.erase(fifo.front());fifo.pop_front();}cache[key]=cov;fifo.push_back(key);++cache_misses;}phase["coverage_prepare"]+=elapsed(tick);
@@ -60,10 +169,20 @@ static int run(const Options&o){
  tick=Clock::now();saf_mapping*m=nullptr;ok(saf_mapping_create(cov->h.get(),parent.data(),taxon.data(),parent.size(),&m));std::unique_ptr<saf_mapping,decltype(&saf_mapping_destroy)>map(m,saf_mapping_destroy);saf_mapping_info mi;ok(saf_mapping_get_info(m,&mi));
  if(mi.n_reference_absent>UINT64_MAX-total_absent||mi.n_gene_unmatched>UINT64_MAX-total_unmatched)throw std::runtime_error("unmatched count overflow");
  total_absent+=mi.n_reference_absent;total_unmatched+=mi.n_gene_unmatched;std::vector<char>states(ri.n_axes);ok(saf_mapping_states(m,states.data(),states.size()));if(support)ok(saf_support_update(support.get(),m));phase["mapping_prepare"]+=elapsed(tick);
- Values primitive(matrix?ri.n_axes:0),projection(full?mi.n_projections:0),edgevalues(full?mi.n_gene_splits:0);
+ Values primitive(matrix?ri.n_axes:0),projection((full||fusion)?mi.n_projections:0),edgevalues(full?mi.n_gene_splits:0);
  if(o.numeric){tick=Clock::now();std::vector<double>len;std::vector<uint8_t>valid;lengths(tree,len,valid);phase["parse"]+=elapsed(tick);tick=Clock::now();ok(saf_mapping_apply(m,len.data(),valid.data(),len.size(),primitive.buffer(),projection.buffer(),edgevalues.buffer()));phase["apply"]+=elapsed(tick);}
  tick=Clock::now();if(matrix){if(o.numeric)table_values(w.get("matrix.tsv"),id,primitive);auto&s=w.get("raw_states.tsv");s<<id;for(char v:states)s<<'\t'<<v;s<<'\n';}
- if(full){auto edges=edge_queries(m,mi.n_gene_splits);auto p2g=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_projection_to_gene(m,x,y,z);});auto g2p=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_gene_to_projection(m,x,y,z);});auto absent=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_reference_absent(m,x,y,z);});auto unmatched=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_gene_unmatched(m,x,y,z);});
+ std::vector<Edge> edges;
+ std::vector<size_t> p2g;
+ if(full) edges=edge_queries(m,mi.n_gene_splits);
+ if(full||fusion) p2g=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_projection_to_gene(m,x,y,z);});
+ if(fusion) {
+  if(full) fusion->record(id,*cov,p2g,projection,[&](size_t e) -> const std::vector<size_t>& {return edges[e].sources;});
+  else fusion->record(id,*cov,p2g,projection,[&](size_t e) {
+   return query<size_t>([&](auto x,auto y,auto z){return saf_mapping_gene_sources(m,e,x,y,z);});
+  });
+ }
+ if(full){auto g2p=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_gene_to_projection(m,x,y,z);});auto absent=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_reference_absent(m,x,y,z);});auto unmatched=query<size_t>([&](auto x,auto y,auto z){return saf_mapping_gene_unmatched(m,x,y,z);});
  auto base=[&](std::ostream&s){s<<"\"gene_idx\":"<<count<<",\"gene_id\":"<<json(id)<<",\"coverage_id\":"<<json(cov->id);};
  auto&s=w.get("mapping.jsonl");s<<'{';base(s);s<<",\"node_parent\":";array(s,parent);s<<",\"node_taxon\":";array(s,taxon);s<<",\"node_annotations\":";annotations(s,tree);s<<",\"gene_edges\":[";for(size_t e=0;e<edges.size();++e){if(e)s<<',';s<<"{\"id\":"<<e<<",\"split_hex\":"<<json(edges[e].hex)<<",\"source_nodes\":";array(s,edges[e].sources);s<<',';value_json(s,edgevalues,e);s<<'}';}s<<"],\"projection_to_gene\":";array(s,p2g,true);s<<",\"gene_to_projection\":";array(s,g2p,true);s<<",\"reference_absent\":";array(s,absent);s<<",\"gene_unmatched\":";array(s,unmatched);s<<",\"raw_states\":"<<json(std::string(states.begin(),states.end()))<<"}\n";
  for(size_t g=0;g<cov->groups.size();++g){
@@ -82,11 +201,40 @@ static int run(const Options&o){
  }
  phase["serialize_write"]+=elapsed(tick);++count;
  }
- if(o.inject=="read")input.setstate(std::ios::badbit);if(input.bad()||!input.eof())throw std::runtime_error("input read failed before clean EOF");input.clear();input.close();if(input.fail())throw std::runtime_error("input close failed");
- tick=Clock::now();if(support){auto counts=query<saf_support_count>([&](auto x,auto y,auto z){return saf_support_read(support.get(),x,y,z);});auto&s=w.get("support.tsv");s<<"axis_id\tbranch_type\tn_valid_topologies\tn_struct\tn_fused\tn_dec\tn_rec\tn_not_recovered\tsupport_fraction\tsupport_percent\n";for(size_t a=0;a<counts.size();++a){auto&c=counts[a];s<<a<<'\t'<<(terminal[a]?"terminal":"internal")<<'\t'<<c.n_valid_topologies<<'\t'<<c.n_struct<<'\t'<<c.n_fused<<'\t'<<c.n_dec<<'\t'<<c.n_rec<<'\t'<<c.n_not_recovered<<'\t';if(c.n_dec)s<<double(c.n_rec)/c.n_dec<<'\t'<<100.0*double(c.n_rec)/c.n_dec;else s<<"NA\tNA";s<<'\n';}}w.close();phase["serialize_write"]+=elapsed(tick);
- tick=Clock::now();std::ostringstream manifest;manifest.imbue(std::locale::classic());manifest<<std::setprecision(17);manifest<<"{\"status\":\"COMPLETED\",\"schema\":\"SplitAlignerFast-R2-v1\",\"definition\":\"canonical-unrooted-exact-coverage-projection\",\"build_commit\":"<<json(SAF_BUILD_COMMIT)<<",\"binary_sha256\":"<<json(file_digest("/proc/self/exe"))<<",\"scope\":"<<json(o.scope)<<",\"role\":"<<json(o.role)<<",\"numeric\":"<<(o.numeric?"true":"false")<<",\"gene_format\":"<<json(o.format)<<",\"output_contract_revision\":\"R2-layered-groups-v1\",\"unmatched_splits\":{\"requested\":"<<(o.unmatched=="default"?"null":json(o.unmatched))<<",\"written\":"<<(write_unmatched?"true":"false")<<",\"counts_computed\":"<<(truth?"false":"true")<<",\"n_reference_absent\":"<<(truth?"null":std::to_string(total_absent))<<",\"n_gene_unmatched\":"<<(truth?"null":std::to_string(total_unmatched))<<"},\"gene_count\":"<<count<<",\"axis_count\":"<<ri.n_axes<<",\"coverage_cache_limit\":64,\"coverage_cache_hits\":"<<cache_hits<<",\"coverage_cache_misses\":"<<cache_misses<<",\"inputs\":[";std::vector<std::string>inputs{o.reference,truth?o.taxa:o.genes};for(size_t i=0;i<inputs.size();++i){if(i)manifest<<',';manifest<<"{\"path\":"<<json(fs::absolute(inputs[i]).string())<<",\"bytes\":"<<fs::file_size(inputs[i])<<",\"sha256\":"<<json(file_digest(inputs[i]))<<'}';}manifest<<"],\"files\":[";bool first=true;for(auto&kv:w.files){if(!first)manifest<<',';first=false;manifest<<"{\"path\":"<<json(kv.first)<<",\"bytes\":"<<fs::file_size(stage/kv.first)<<",\"sha256\":"<<json(file_digest((stage/kv.first).string()))<<'}';}manifest<<"],\"phase_seconds\":{";phase["manifest_hash"]+=elapsed(tick);first=true;for(auto&kv:phase){if(!first)manifest<<',';first=false;manifest<<json(kv.first)<<':'<<kv.second;}manifest<<"},\"wall_before_publish_seconds\":"<<elapsed(started)<<"}\n";checked_file(stage/"manifest.json",manifest.str());
- if(syscall(SYS_renameat2,AT_FDCWD,stage.c_str(),AT_FDCWD,out.c_str(),1)!=0)throw std::runtime_error("atomic no-overwrite output publish failed");
+ input.finish(o.inject=="read");
+ tick=Clock::now();
+ if(fusion)fusion->finish(w.get("fusion_matrix.tsv"),w.get("fusion_cells.jsonl"),o.fusion_view=="direct");
+ if(support)write_support(w,support.get(),reference,axes,terminal);
+ w.close();phase["serialize_write"]+=elapsed(tick);
+ tick=Clock::now();
+#if defined(__APPLE__) || defined(_WIN32)
+ const std::string& binary_digest=startup_binary_digest;
+#else
+ const std::string binary_digest=file_digest(safplatform::executable_path());
+#endif
+ std::ostringstream manifest;manifest.imbue(std::locale::classic());manifest<<std::setprecision(17);manifest<<"{\"status\":\"COMPLETED\",\"schema\":\"SplitAlignerFast-R2-v1\",\"definition\":\"canonical-unrooted-exact-coverage-projection\",\"build_commit\":"<<json(SAF_BUILD_COMMIT)<<",\"binary_sha256\":"<<json(binary_digest)<<",\"scope\":"<<json(o.scope)<<",\"role\":"<<json(o.role)<<",\"numeric\":"<<(o.numeric?"true":"false")<<",\"gene_format\":"<<json(o.format)<<",\"output_contract_revision\":\"R2-whole-components-v1\",\"fusion_view\":"<<json(fusion?o.fusion_view:"off")<<",\"unmatched_splits\":{\"requested\":"<<(o.unmatched=="default"?"null":json(o.unmatched))<<",\"written\":"<<(write_unmatched?"true":"false")<<",\"counts_computed\":"<<(truth?"false":"true")<<",\"n_reference_absent\":"<<(truth?"null":std::to_string(total_absent))<<",\"n_gene_unmatched\":"<<(truth?"null":std::to_string(total_unmatched))<<"},\"gene_count\":"<<count<<",\"axis_count\":"<<ri.n_axes<<",\"coverage_cache_limit\":64,\"coverage_cache_hits\":"<<cache_hits<<",\"coverage_cache_misses\":"<<cache_misses<<",\"inputs\":[";input_record(manifest,o.reference,reference_hash);manifest<<',';input_record(manifest,truth?o.taxa:o.genes,rows_hash);manifest<<"],\"files\":[";bool first=true;for(auto&kv:w.files){if(!first)manifest<<',';first=false;manifest<<"{\"path\":"<<json(kv.first)<<",\"bytes\":"<<fs::file_size(stage/kv.first)<<",\"sha256\":"<<json(file_digest((stage/kv.first).u8string()))<<'}';}manifest<<"],\"phase_seconds\":{";phase["manifest_hash"]+=elapsed(tick);first=true;for(auto&kv:phase){if(!first)manifest<<',';first=false;manifest<<json(kv.first)<<':'<<kv.second;}manifest<<"},\"wall_before_publish_seconds\":"<<elapsed(started)<<"}\n";checked_file(stage/"manifest.json",manifest.str());
+ try { safplatform::publish_directory(stage,out); }
+ catch(const std::system_error& e) {
+  throw std::runtime_error("atomic no-overwrite publish to "+out.u8string()+" failed: "+e.code().message()+"; staging: "+stage.u8string());
+ }
  std::cout<<"{\"status\":\"COMPLETED\",\"genes\":"<<count<<",\"axes\":"<<ri.n_axes<<",\"wall_seconds\":"<<std::setprecision(17)<<elapsed(started)<<"}\n";return 0;
  }catch(const std::exception&e){std::error_code ec;fs::remove(stage/"manifest.json",ec);try{checked_file(stage/"FAILED.json","{\"status\":\"FAILED\",\"error\":"+json(e.what())+"}\n");}catch(...){}throw;}
 }
-int main(int argc,char**argv){try{if(argc==2&&std::string(argv[1])=="--version"){std::cout<<saf_version()<<"\n";return 0;}return run(options(argc,argv));}catch(const std::exception&e){std::cerr<<"SplitAlignerFast: "<<e.what()<<'\n';return 1;}catch(...){std::cerr<<"SplitAlignerFast: unknown failure\n";return 1;}}
+static int cli_main(int argc,char**argv){try{if(argc==2&&std::string(argv[1])=="--version"){std::cout<<saf_version()<<"\n";return 0;}return run(options(argc,argv));}catch(const std::exception&e){std::cerr<<"SplitAlignerFast: "<<e.what()<<'\n';return 1;}catch(...){std::cerr<<"SplitAlignerFast: unknown failure\n";return 1;}}
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** argv) {
+ try {
+  std::vector<std::string> args;
+  args.reserve(static_cast<size_t>(argc));
+  for(int i=0;i<argc;++i) args.push_back(safplatform::utf8_argument(argv[i]));
+  std::vector<char*> pointers;
+  for(auto& arg:args) pointers.push_back(arg.data());
+  return cli_main(argc,pointers.data());
+ } catch(const std::exception& e) {
+  std::cerr << "SplitAlignerFast: " << e.what() << '\n';return 1;
+ }
+}
+#else
+int main(int argc,char**argv){return cli_main(argc,argv);}
+#endif

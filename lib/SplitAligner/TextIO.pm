@@ -5,6 +5,7 @@ use warnings;
 use Cwd ();
 use Encode qw(decode encode FB_CROAK LEAVE_SRC);
 use Exporter qw(import);
+use SplitAligner::Platform qw(native_windows assert_native_runtime assert_windows_path);
 
 our @EXPORT_OK = qw(
     abs_path_utf8
@@ -34,7 +35,10 @@ sub configure_utf8_stdio {
 }
 
 sub decode_argv_utf8 {
+    assert_native_runtime();
     for my $i (0 .. $#ARGV) {
+        die "[ERROR][Windows] Use ASCII command-line arguments; UTF-8 labels and gene IDs may be supplied in input files.\n"
+            if native_windows() && $ARGV[$i] =~ /[^\x20-\x7e]/;
         next if utf8::is_utf8($ARGV[$i]);
         $ARGV[$i] = decode_utf8_strict($ARGV[$i], "command-line argument " . ($i + 1));
     }
@@ -43,6 +47,7 @@ sub decode_argv_utf8 {
 sub decode_filesystem_path_utf8 {
     my ($path, $context) = @_;
     return undef unless defined $path;
+    assert_windows_path($path);
     $context //= 'filesystem path';
     return decode_utf8_strict($path, $context);
 }

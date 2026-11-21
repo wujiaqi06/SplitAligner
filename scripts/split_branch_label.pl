@@ -179,8 +179,11 @@ for my $fname (@split_files) {
     my $OUT = open_utf8_writer($out_path);
 
     my %gene_split_to_values;
+    my %gene_split_row;
+    my $source_row = 0;
 
     for my $line (@{ read_utf8_lines($in_path) }) {
+        ++$source_row;
         next if $line eq '';
         my @fields = split(/\t/, $line);
         next unless @fields >= 2;
@@ -195,6 +198,7 @@ for my $fname (@split_files) {
         }
 
         push @{ $gene_split_to_values{$canonical_split} }, $val;
+        $gene_split_row{$canonical_split} = $source_row;
     }
 
     my @gene_splits = sort keys %gene_split_to_values;
@@ -203,6 +207,20 @@ for my $fname (@split_files) {
         close_utf8_writer($OUT, $out_path);
         next;
     }
+
+    my $component_path = File::Spec->catfile($out_dir, "$storage_key.components.tsv");
+    my $components = open_utf8_writer($component_path);
+    print_utf8($components, "members\tmatched_gene_split_row\tunmatched_projected_split\tlength\n");
+
+    # A matched projection is the canonical split at this row of the input split
+    # ledger. Store that reference once, instead of copying long taxon strings.
+    my $record_component = sub {
+        my ($members, $projected_split) = @_;
+        my $source = $gene_split_row{$projected_split};
+        my $value = defined($source) ? $gene_split_to_values{$projected_split}[0] : 'NA';
+        print_utf8($components, join("\t", $members, $source // '',
+            defined($source) ? '' : $projected_split, $value), "\n");
+    };
 
     # Derive species present in this gene from one complete split.
     my $g0 = $gene_splits[0];
@@ -274,6 +292,7 @@ for my $fname (@split_files) {
         for my $gene_split (sort keys %split_to_projected_branches) {
             my @members = sort_branch_ids(@{ $split_to_projected_branches{$gene_split} });
             my $present = exists $gene_split_to_values{$gene_split};
+            $record_component->(join('|', @members), $gene_split);
             if (@members > 1) {
                 $truth{$_} = 'NA_fuse' for @members;
                 # tree_to_splits has already pooled both edges at a binary root.
@@ -319,6 +338,7 @@ for my $fname (@split_files) {
     } else {
         # No missing taxa: direct match against full axis (canonical splits)
         for my $axis_split (sort keys %branch_to_split) {
+            $record_component->($branch_to_split{$axis_split}, $axis_split);
             if (exists $gene_split_to_values{$axis_split}) {
                 my $branch_id = $branch_to_split{$axis_split};
                 $truth{$branch_id} = 'Mapped';
@@ -336,6 +356,7 @@ for my $fname (@split_files) {
     print_utf8($truth_fh, join("\t", $gene_id, map { $truth{$_} } @primitive_axis), "\n");
     $state_for_gene{$gene_id} = [ map { $state{$_} } @primitive_axis ];
     close_utf8_writer($OUT, $out_path);
+    close_utf8_writer($components, $component_path);
 }
 
 close_utf8_writer($truth_fh, File::Spec->catfile($out_dir, "$label.primitive_truth.tsv"));

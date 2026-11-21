@@ -23,10 +23,11 @@ use 5.010;
 use strict;
 use warnings;
 use Getopt::Std;
+use POSIX qw(isfinite);
 use File::Spec;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use SplitAligner::Newick qw(is_numeric_value);
+use SplitAligner::Newick qw(format_pooled_length is_numeric_value sum_component_lengths);
 use SplitAligner::Provenance qw(read_axis_ledger);
 use SplitAligner::TextIO qw(
     close_utf8_writer
@@ -34,6 +35,7 @@ use SplitAligner::TextIO qw(
     decode_argv_utf8
     open_utf8_writer
     print_utf8
+    for_each_utf8_line
     read_utf8_lines
 );
 
@@ -41,13 +43,16 @@ decode_argv_utf8();
 configure_utf8_stdio();
 
 my %opts;
-getopts('i:o:a:g:', \%opts);
+getopts('i:o:a:g:v:', \%opts) or die "Invalid matrix options.\n";
 
 my $usage = "Usage: $0 -i <label>_split_branch_label -o <label> -a <primitive_axis.tsv> -g <gene_id_map.tsv>\n";
 my $in_dir = $opts{'i'} or die $usage;
 my $label  = $opts{'o'} or die $usage;
 my $axis_file = $opts{'a'} or die $usage;
 my $gene_map_file = $opts{'g'} or die $usage;
+
+my $view = $opts{v} // 'whole';
+die "[ERROR] Fusion view must be whole or direct.\n" unless $view =~ /\A(?:whole|direct)\z/;
 
 die "[ERROR] Input directory not found: $in_dir\n" unless -d $in_dir;
 die "[ERROR] Primitive axis ledger not found: $axis_file\n" unless -e $axis_file;
@@ -56,152 +61,116 @@ die "[ERROR] Gene identity map not found: $gene_map_file\n" unless -e $gene_map_
 my $axis = read_axis_ledger($axis_file);
 my @primitive = map { $_->{branch_id} } @{$axis};
 my %primitive_id = map { $_ => 1 } @primitive;
-my ($storage_to_gene, $gene_to_storage) = read_gene_id_map($gene_map_file);
+my (undef, $gene_to_storage) = read_gene_id_map($gene_map_file);
 
-# Collect input split files
-opendir(my $DH, $in_dir) or die "[ERROR] Cannot open directory $in_dir: $!\n";
-my @files = sort grep { /\.split\.txt$/ && -f File::Spec->catfile($in_dir, $_) } readdir($DH);
-closedir($DH);
+# The shared axis comes from reference restriction, even for a group whose
+# projected split is absent from every gene tree where it forms.
+my %targets;
+my $groups_path = File::Spec->catfile($in_dir, "$label.projected_groups.tsv");
+for_each_utf8_line($groups_path, sub {
+    my ($line, $number) = @_;
+    return if $number == 1;
+    my (undef, undef, $pattern) = split(/\t/, $line);
+    return if exists $targets{$pattern};
+    my @parts = split(/\|/, $pattern);
+    validate_pattern_members(\@parts, \%primitive_id, $groups_path, $pattern);
+    $targets{$pattern} = \@parts;
+});
+my @fused_sorted = sort { _cmp_branch_pattern($a, $b) } keys %targets;
 
-# gene_id -> { pattern => value }
-my %gene_branch;
-my %genes;
-
-# Collect fused patterns (contain '|')
-my %fused_patterns;
-
-my %seen_storage;
-
-foreach my $fn (@files) {
-    my $path = File::Spec->catfile($in_dir, $fn);
-    (my $storage_key = $fn) =~ s/\.split\.txt$//;
-    die "[ERROR] Split file has no entry in gene identity map: $fn\n"
-        unless exists $storage_to_gene->{$storage_key};
-    die "[ERROR] Duplicate split file for storage key '$storage_key'.\n"
-        if $seen_storage{$storage_key}++;
-    my $gene_id = $storage_to_gene->{$storage_key};
-    $genes{$gene_id} = 1;
-
-    for my $line (@{ read_utf8_lines($path) }) {
-        next if $line =~ /^\s*$/;
-
-        my @f = split(/\t/, $line);
-        next unless @f >= 3; # expected: split \t branch_pattern \t value
-
-        my $pattern = $f[1];
-        my $value   = $f[2];
-
-        # Canonicalize fused order: B3|B1 -> B1|B3
-        if ($pattern =~ /\|/) {
-            my @parts = sort_branch_ids(split(/\|/, $pattern));
-            validate_pattern_members(\@parts, \%primitive_id, $path, $pattern);
-            $pattern = join('|', @parts);
-            $fused_patterns{$pattern} = 1;
-        } else {
-            validate_pattern_members([$pattern], \%primitive_id, $path, $pattern);
-        }
-
-        if (exists $gene_branch{$gene_id}{$pattern}) {
-            $gene_branch{$gene_id}{$pattern} = _merge_pattern_values(
-                $gene_branch{$gene_id}{$pattern},
-                $value,
-            );
-        } else {
-            $gene_branch{$gene_id}{$pattern} = $value;
-        }
-
-    }
-}
-
-for my $storage_key (sort keys %{$storage_to_gene}) {
-    die "[ERROR] Missing mapped split file for gene '$storage_to_gene->{$storage_key}' (storage key $storage_key).\n"
-        unless $seen_storage{$storage_key};
-}
-
-# Sort fused patterns by their numeric components (stable, human-friendly)
-my @fused_sorted = sort {
-    _cmp_branch_pattern($a, $b)
-} keys %fused_patterns;
-
-# Output files
-my $out_no   = "${label}.matrix_no_fuse.txt";
+my $out_no = "${label}.matrix_no_fuse.txt";
 my $out_with = "${label}.matrix_with_fuse.txt";
-
+my $out_cells = "${label}.fusion_cells.tsv";
 my $NO = open_utf8_writer($out_no);
 my $WITH = open_utf8_writer($out_with);
-
-# Headers
+my $CELLS = open_utf8_writer($out_cells);
 print_utf8($NO, join("\t", "gene", @primitive), "\n");
 print_utf8($WITH, join("\t", "gene", @primitive, @fused_sorted), "\n");
+print_utf8($CELLS, join("\t", qw(gene column reference_state recovery_status numeric_status
+    construction_mode components deleted_members cut_components length)), "\n");
 
-# Rows
-for my $gene_id (sort keys %genes) {
-
-    # no_fuse
-    my @row_no = ($gene_id);
-    for my $b (@primitive) {
-        if (exists $gene_branch{$gene_id}{$b}) {
-            push @row_no, $gene_branch{$gene_id}{$b};
-        } else {
-            push @row_no, "NA";
+for my $gene_id (sort keys %{$gene_to_storage}) {
+    my $storage = $gene_to_storage->{$gene_id};
+    my $mapped = File::Spec->catfile($in_dir, "$storage.split.txt");
+    my %primitive_values;
+    for_each_utf8_line($mapped, sub {
+        my ($line) = @_;
+        my (undef, $pattern, $length) = split(/\t/, $line);
+        $primitive_values{$pattern} = $length if $primitive_id{$pattern};
+    });
+    my @row = ($gene_id, map { $primitive_values{$_} // 'NA' } @primitive);
+    print_utf8($NO, join("\t", @row), "\n");
+    if (@fused_sorted) {
+        my $component_path = File::Spec->catfile($in_dir, "$storage.components.tsv");
+        my $owners = read_components($component_path);
+        for my $target (@fused_sorted) {
+            my @cell = construct_cell($targets{$target}, $owners, $view);
+            push @row, $cell[-1];
+            print_utf8($CELLS, join("\t", $gene_id, $target, @cell), "\n");
         }
     }
-    print_utf8($NO, join("\t", @row_no), "\n");
-
-    # with_fuse
-    my @row_with = @row_no; # starts with gene + primitive axis
-    for my $pat (@fused_sorted) {
-        if (exists $gene_branch{$gene_id}{$pat}) {
-            push @row_with, $gene_branch{$gene_id}{$pat};
-            next;
-        }
-
-        # Otherwise, attempt to synthesize from primitive components.
-        my $synth = _synthesize_fused_value($gene_branch{$gene_id}, $pat);
-        push @row_with, $synth;
-    }
-    print_utf8($WITH, join("\t", @row_with), "\n");
+    print_utf8($WITH, join("\t", @row), "\n");
 }
-
 close_utf8_writer($NO, $out_no);
 close_utf8_writer($WITH, $out_with);
+close_utf8_writer($CELLS, $out_cells);
 
-exit 0;
+sub read_components {
+    my ($path) = @_;
+    my %owner;
+    for_each_utf8_line($path, sub {
+        my ($line, $number) = @_;
+        return if $number == 1;
+        my ($pattern, $source_row, $unmatched_split, $length) = split(/\t/, $line, -1);
+        my @parts = split(/\|/, $pattern);
+        my $component = { id => $pattern, size => scalar(@parts),
+            recovered => length($source_row), length => $length };
+        for my $part (@parts) {
+            die "[ERROR][$path line $number] Repeated component membership for $part.\n"
+                if exists $owner{$part};
+            $owner{$part} = $component;
+        }
+    });
+    return \%owner;
+}
 
-# ------------------------------------------------------------------------------
-# Internal helpers
-# ------------------------------------------------------------------------------
-
-sub _synthesize_fused_value {
-    my ($gene_href, $pattern) = @_;
-    my @parts = split(/\|/, $pattern);
-
-    my $sum = 0;
-    for my $b (@parts) {
-        return "NA" unless exists $gene_href->{$b};
-        my $v = $gene_href->{$b};
-
-        # Only accept numeric values; otherwise NA (avoid implicit 0)
-        return "NA" unless is_numeric_branch_value($v);
-        $sum += $v;
+sub construct_cell {
+    my ($target, $owner, $view) = @_;
+    my (@parts, @deleted, %intersection_size);
+    for my $branch (@{$target}) {
+        my $c = $owner->{$branch};
+        if (!defined $c) {
+            push @deleted, $branch;
+            next;
+        }
+        push @parts, $c unless $intersection_size{$c->{id}}++;
     }
-    return $sum;
-}
+    my @cut = map { $_->{id} } grep { $intersection_size{$_->{id}} != $_->{size} } @parts;
+    my $ids = join(',', map { $_->{id} } @parts);
+    if (@deleted || @cut) {
+        return ('unavailable', 'not_applicable', 'not_applicable', 'none',
+            $ids, join(',', @deleted), join(',', @cut), 'NA');
+    }
 
-sub _merge_pattern_values {
-    my ($old, $new) = @_;
-
-    my $is_old_num = is_numeric_branch_value($old);
-    my $is_new_num = is_numeric_branch_value($new);
-
-    return $old + $new if $is_old_num && $is_new_num;
-    return $old if defined $old && (!defined $new || $new eq '');
-    return $new;
-}
-
-sub is_numeric_branch_value {
-    my ($value) = @_;
-    return is_numeric_value($value);
+    my $active = @parts == 1;
+    my $reference = $active ? 'active' : 'decomposable';
+    my $mode = $active ? 'single_edge_lookup' : 'selected_component_edge_sum';
+    return ($reference, 'not_recovered', 'not_recovered', $mode, $ids, '', '', 'NA')
+        if grep { !$_->{recovered} } @parts;
+    # Direct view suppresses cross-component construction before inspecting
+    # lengths. The current-component evidence is preserved independently.
+    return ($reference, 'recovered', 'direct_only', $mode, $ids, '', '', 'NA')
+        if !$active && $view eq 'direct';
+    return ($reference, 'recovered', 'missing_length', $mode, $ids, '', '', 'NA')
+        if grep { !is_numeric_value($_->{length}) || !isfinite(0 + $_->{length}) } @parts;
+    my $value = $parts[0]{length};
+    if (!$active) {
+        $value = sum_component_lengths(map { $_->{length} } @parts);
+        return ($reference, 'recovered', 'nonfinite_sum', $mode, $ids, '', '', 'NA')
+            unless isfinite($value);
+        $value = format_pooled_length($value);
+    }
+    return ($reference, 'recovered', 'available', $mode, $ids, '', '', $value);
 }
 
 sub _cmp_branch_pattern {
@@ -222,15 +191,6 @@ sub _cmp_branch_pattern {
         }
     }
     return @aa <=> @bb;
-}
-
-sub sort_branch_ids {
-    return sort {
-        my ($an) = $a =~ /^B(\d+)$/;
-        my ($bn) = $b =~ /^B(\d+)$/;
-        return $a cmp $b unless defined $an && defined $bn;
-        return $an <=> $bn;
-    } @_;
 }
 
 sub validate_pattern_members {

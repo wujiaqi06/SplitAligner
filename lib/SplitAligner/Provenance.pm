@@ -105,9 +105,12 @@ sub file_sha256 {
 sub write_json_file {
     my ($path, $data) = @_;
     my $json = JSON::PP->new->canonical(1)->pretty(1)->utf8(1);
+    my $bytes = $json->encode($data);
     open my $fh, '>:raw', $path or die "[ERROR] Cannot write $path: $!\n";
-    print {$fh} $json->encode($data);
+    print {$fh} $bytes or die "[ERROR] Cannot write $path: $!\n";
     close $fh or die "[ERROR] Cannot close $path: $!\n";
+    # Seal the intended serialization, never a second read of mutable output.
+    return sha256_hex($bytes);
 }
 
 sub read_json_file {
