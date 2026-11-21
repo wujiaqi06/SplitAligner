@@ -144,11 +144,15 @@ sub write_gene_splits {
 
         my $out_path = File::Spec->catfile($out_dir, "$storage_key.split.txt");
         my $out_fh = open_utf8_writer($out_path);
+        my $nodes_path = File::Spec->catfile($out_dir, "$storage_key.source_nodes.txt");
+        my $nodes_fh = open_utf8_writer($nodes_path);
         my $split_records = gene_split_records($record->{root});
         for my $split (@{$split_records}) {
             print_utf8($out_fh, "$split->{split}\t$split->{value}\n");
+            print_utf8($nodes_fh, join(',', @{ $split->{source_nodes} }), "\n");
         }
         close_utf8_writer($out_fh, $out_path);
+        close_utf8_writer($nodes_fh, $nodes_path);
     }
     close_utf8_writer($map_fh, $map_path);
 }

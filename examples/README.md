@@ -13,6 +13,10 @@ preprint_302mammal/
   run/         generated ownership-managed outputs
 ```
 
+For the two extended toy matrices, compare the current default output to
+`302mammal/expected/whole-components-v1/`. The files directly under
+`expected/` document the historical outputs.
+
 The `run/` directories are created when needed and are intentionally absent
 from a fresh source archive.
 

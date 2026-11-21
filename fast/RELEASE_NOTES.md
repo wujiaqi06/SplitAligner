@@ -1,3 +1,13 @@
+# SplitAlignerFast 0.2.0-rc.3
+
+The command-line interface now builds natively on macOS as well as Linux. The macOS adapter resolves and hashes its executable before reading inputs, publishes output directories with atomic no-replace rename, and uses the native locale and shared-library interfaces. The bitset core and numerical construction algorithms are unchanged. The source supports Linux, macOS and a bounded native Windows GCC/MinGW target. Binary distributions and their dependency requirements are documented separately.
+
+Native Windows support preserves Unicode paths, uses a private C numeric locale, closes temporary spools before publication, and refuses to overwrite existing destinations. The Windows qualification used GCC/MinGW; MSVC is not claimed as validated. CI also builds the native UCRT64 GCC target. See [Windows scope and commands](docs/WINDOWS.md).
+
+Direct views now classify recovered decomposable cells as `direct_only` before multi-component numeric checks. They do not perform an excluded sum or label its hypothetical overflow. Source lengths, primitive states, recovery and Support remain available and unchanged. A single normalized observation still follows the existing finite-range validation. The Perl matrix assembler follows the same priority.
+
+Numeric `full` and `matrix` runs add `fusion_matrix.tsv` and `fusion_cells.jsonl` under output contract `R2-whole-components-v1`. The default `--fusion-view whole` records single recovered edges and exact sums of recovered complete components. Select `direct` to export only direct observations, or `off` to skip shared-matrix assembly. The output guide describes per-cell provenance and its relation to the original-branch matrix.
+
 # SplitAlignerFast 0.2.0-rc.2
 
 This Linux source candidate packages the C++17 exact-bitset core, C ABI 2, streaming Newick CLI and Python binding. The CLI now reports an unrecovered shared projection as `NA_fuse_topo` once per group in free full/support runs. Fused members keep raw state F. CLI implementation revision: `91860d941c6b591b078fc99b02bdf7933fdba6c6`; the native core and ABI are unchanged. The value in the CLI manifest identifies that implementation source. Source archive checksums identify this distribution.

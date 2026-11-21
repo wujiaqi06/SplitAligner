@@ -22,6 +22,36 @@ expect_failure() {
     fi
 }
 
+# The v2 storage contract is one sealed ledger and an injective gene index.
+# A missing old directory must not be confused with successful cleanup.
+assert_compact_genes() {
+    python3 - "$@" <<'PY_CHECK'
+import hashlib, json, sys
+from pathlib import Path
+root, *expected = sys.argv[1:]
+root = Path(root)
+raw = (root / "x.compact.jsonl").read_bytes()
+index = json.loads((root / "x.compact.index.json").read_text())
+records = [json.loads(line) for line in raw.splitlines()]
+assert sorted(r["gene_id"] for r in records) == sorted(expected)
+assert sorted(e["gene_id"] for e in index["genes"]) == sorted(expected)
+assert len({e["storage_key"] for e in index["genes"]}) == len(expected)
+assert index["ledger_sha256"] == hashlib.sha256(raw).hexdigest()
+covered = []
+for entry in index["genes"]:
+    start, size = entry["ledger_offset"], entry["ledger_bytes"]
+    block = raw[start:start + size]
+    assert block.endswith(b"\n") and block.count(b"\n") == 1
+    assert hashlib.sha256(block).hexdigest() == entry["sha256"]
+    assert json.loads(block)["gene_id"] == entry["gene_id"]
+    covered.append((start, start + size))
+covered.sort()
+assert covered[0][0] == 0 and covered[-1][1] == len(raw)
+assert all(a[1] == b[0] for a, b in zip(covered, covered[1:]))
+assert not (root / "x_splits").exists()
+PY_CHECK
+}
+
 mkdir -p "$TMP/fixtures"
 cat > "$TMP/fixtures/species.nwk" <<'EOF'
 ((A,B),(C,D));
@@ -83,7 +113,7 @@ cmp -s "$TMP/sa002/before.txt" "$TMP/sa002/x.matrix_with_fuse.txt"
 ) >/dev/null 2>&1
 grep -q '^g1' "$TMP/sa002/x.matrix_with_fuse.txt"
 ! grep -q '^g2' "$TMP/sa002/x.matrix_with_fuse.txt"
-[[ "$(find "$TMP/sa002/x_splits" -name '*.split.txt' | wc -l | tr -d ' ')" == 1 ]]
+assert_compact_genes "$TMP/sa002" g1
 pass 'SA-002 transactional same-label replacement'
 
 # SA-003: duplicate exact IDs fail; formerly colliding filenames remain distinct.
@@ -105,7 +135,7 @@ mkdir -p "$TMP/sa003_collision"
 ) >/dev/null 2>&1
 grep -q '^g/a' "$TMP/sa003_collision/x.matrix_with_fuse.txt"
 grep -q '^g_a' "$TMP/sa003_collision/x.matrix_with_fuse.txt"
-[[ "$(find "$TMP/sa003_collision/x_splits" -name '*.split.txt' | wc -l | tr -d ' ')" == 2 ]]
+assert_compact_genes "$TMP/sa003_collision" g/a g_a
 pass 'SA-003 gene identity uniqueness and injective storage'
 
 # SA-004/005: one numeric grammar and numeric-only terminal labels.
@@ -151,7 +181,7 @@ for case in unknown duplicate_taxon unbalanced empty two_trees; do
     mkdir -p "$TMP/invalid/$case"
     expect_failure "invalid_$case" bash -c "cd '$TMP/invalid/$case' && perl '$SA' --mode matrix --species '$TMP/fixtures/species.nwk' --gene '$TMP/fixtures/$case.nwk' --label x"
     [[ ! -e "$TMP/invalid/$case/x.matrix_with_fuse.txt" ]]
-    [[ ! -e "$TMP/invalid/$case/x_splits" ]]
+    [[ -z "$(find "$TMP/invalid/$case" -mindepth 1 -print -quit)" ]] || fail "invalid $case published output or staging residue"
 done
 grep -q "Unknown taxon 'X'" "$TMP/invalid_unknown.stderr"
 grep -q "Duplicate terminal taxon 'A'" "$TMP/invalid_duplicate_taxon.stderr"

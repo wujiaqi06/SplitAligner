@@ -16,6 +16,8 @@ use File::Temp qw(tempdir tempfile);
 use FindBin qw($RealBin);
 use Getopt::Long qw(GetOptions);
 use lib "$RealBin/lib";
+use SplitAligner::CompactPipeline qw(run_compact_matrix);
+use SplitAligner::Platform qw(protect_private_input);
 use SplitAligner::Newick qw(
     parse_gene_tree_file
     parse_labeled_species_tree_file
@@ -67,8 +69,10 @@ use SplitAligner::TextIO qw(
 decode_argv_utf8();
 configure_utf8_stdio();
 
+my $input_snapshot_root;
+
 my ($mode, $species_tree, $gene_trees, $label, $free_matrix, $fix_matrix,
-    $final_label, $free_manifest, $fix_manifest, $force, $help);
+    $final_label, $free_manifest, $fix_manifest, $fusion_view, $force, $help);
 
 GetOptions(
     'mode=s'          => \$mode,
@@ -81,6 +85,7 @@ GetOptions(
     'species_tree=s'  => \$species_tree,
     'free_manifest=s' => \$free_manifest,
     'fix_manifest=s'  => \$fix_manifest,
+    'fusion-view=s'   => \$fusion_view,
     'force!'          => \$force,
     'help|h'          => \$help,
 ) or die usage();
@@ -90,6 +95,11 @@ if ($help) {
     exit 0;
 }
 die usage() unless defined $mode;
+die "[ERROR] --fusion-view is available in matrix mode only.\n"
+    if defined $fusion_view && $mode ne 'matrix';
+$fusion_view //= 'whole';
+die "[ERROR] --fusion-view must be whole or direct.\n"
+    unless $fusion_view =~ /\A(?:whole|direct)\z/;
 
 my $program_root = decode_filesystem_path_utf8($RealBin, 'SplitAligner program directory');
 my $scripts_dir = File::Spec->catdir($program_root, 'scripts');
@@ -106,6 +116,7 @@ if ($mode eq 'matrix') {
     run_matrix_mode(
         species => $species_tree,
         gene    => $gene_trees,
+        fusion_view => $fusion_view,
         label   => $label,
         force   => $force,
     );
@@ -143,8 +154,8 @@ sub run_matrix_mode {
 
     my $cwd = getcwd_utf8();
     my @inputs = (
-        build_input_record(role => 'matrix species tree', path => $species),
-        build_input_record(role => 'matrix gene trees', path => $gene),
+        build_frozen_input(role => 'matrix species tree', path => $species),
+        build_frozen_input(role => 'matrix gene trees', path => $gene),
     );
     my $species_abs = $inputs[0]{resolved_path};
     my $gene_abs = $inputs[1]{resolved_path};
@@ -156,14 +167,17 @@ sub run_matrix_mode {
         species_tree.primitive_axis.tsv
     );
     my @label_owned = (
-        "${label0}_splits",
+        "$label0.compact.jsonl",
         "${label0}_split_branch_label",
         "$label0.gene_id_map.tsv",
         "$label0.primitive_axis.tsv",
         "$label0.primitive_state.tsv",
         "$label0.matrix_no_fuse.txt",
         "$label0.matrix_with_fuse.txt",
+        "$label0.fusion_cells.tsv",
         "$label0.run_manifest.json",
+        "$label0.compact.index.json",
+        "$label0.taxon_dictionary.json",
     );
     my %common_role = (
         'species_tree.forSplit.nwk'      => 'matrix labeled species tree',
@@ -184,10 +198,10 @@ sub run_matrix_mode {
     } @common_names;
     push @items,
         {
-            source      => "${label0}_splits",
-            destination => File::Spec->catfile($cwd, "${label0}_splits"),
-            role        => 'matrix gene split directory',
-            type        => 'directory',
+            source      => "$label0.compact.jsonl",
+            destination => File::Spec->catfile($cwd, "$label0.compact.jsonl"),
+            role        => 'matrix compact source ledger',
+            type        => 'file',
         },
         {
             source      => "${label0}_split_branch_label",
@@ -227,36 +241,34 @@ sub run_matrix_mode {
         force               => $arg{force},
     );
 
-    print STDERR "[INFO] Preflighting species and gene trees before creating outputs.\n";
-    my $species_root = parse_species_tree_file($species_abs);
-    my $gene_records = parse_gene_tree_file($gene_abs);
-    validate_gene_taxa($gene_records, $species_root, $gene_abs);
+    if ($ownership_authorization->{has_prior_owner}) {
+        my $prior = read_json_file($owner_manifest_path);
+        die "[ERROR] Use a new matrix label when changing the fusion view.\n"
+            unless ($prior->{fusion_matrix}{view} // '') eq $arg{fusion_view};
+    }
+
+    print STDERR "[INFO] Validating reference; gene validation and computation use a private staging ledger.\n";
+    my $species_root = parse_species_tree_file($inputs[0]{snapshot_path});
 
     my $tmp = create_workdir($cwd, $label0);
+    my ($source_inventory, $source_manifest_sha256);
     my $ok = eval {
         in_directory($tmp, sub {
             run_perl_script('label_species_tree.pl', [
-                '-i', $species_abs, '-o', 'species_tree', '-l', 'species_tree',
+                '-i', $inputs[0]{snapshot_path}, '-o', 'species_tree', '-l', 'species_tree',
             ], 'Label species tree');
             run_perl_script('tree_to_splits.pl', [
                 '-i', 'species_tree.forSplit.nwk', '-m', 'species', '-o', 'species_tree',
             ], 'Generate species split axis and primitive ledger');
-            run_perl_script('tree_to_splits.pl', [
-                '-i', $gene_abs, '-m', 'gene', '-o', $label0,
-            ], 'Generate gene splits and identity map');
-            run_perl_script('split_branch_label.pl', [
-                '-i', "${label0}_splits",
-                '-j', 'species_tree.splits.txt',
-                '-a', 'species_tree.primitive_axis.tsv',
-                '-g', "$label0.gene_id_map.tsv",
-                '-o', $label0,
-            ], 'Map gene splits onto species axis');
-            run_perl_script('generate_branch_matrix.pl', [
-                '-i', "${label0}_split_branch_label",
-                '-o', $label0,
-                '-a', 'species_tree.primitive_axis.tsv',
-                '-g', "$label0.gene_id_map.tsv",
-            ], 'Generate branch matrices from the complete primitive ledger');
+            my $compact = run_compact_matrix(
+                label => $label0, view => $arg{fusion_view},
+                gene_path => $inputs[1]{snapshot_path}, species_root => $species_root,
+                gene_source => $gene,
+                axis_file => 'species_tree.primitive_axis.tsv',
+                parser_sha256 => file_sha256(File::Spec->catfile($program_root, 'lib', 'SplitAligner', 'Newick.pm')),
+                input_sha256 => { species_tree => $inputs[0]{sha256}, gene_trees => $inputs[1]{sha256} },
+                input_bytes => { species_tree => -s $inputs[0]{snapshot_path}, gene_trees => -s $inputs[1]{snapshot_path} },
+            );
 
             copy('species_tree.primitive_axis.tsv', "$label0.primitive_axis.tsv")
                 or die "[ERROR] Cannot create label-specific primitive ledger: $!\n";
@@ -266,31 +278,33 @@ sub run_matrix_mode {
                 'species_tree.splits.txt', 'species_tree.branch_map.txt',
                 'species_tree.primitive_axis.tsv', "$label0.gene_id_map.tsv",
                 "$label0.primitive_state.tsv",
-                "$label0.matrix_no_fuse.txt", "$label0.matrix_with_fuse.txt",
+                "$label0.matrix_no_fuse.txt", "$label0.matrix_with_fuse.txt", "$label0.fusion_cells.tsv",
             ) {
                 die "[ERROR] Expected matrix-mode output not found: $required\n" unless -e $required;
             }
 
             my $axis = read_axis_from_manifest_sidecar("$label0.primitive_axis.tsv");
-            my $gene_identity = read_gene_identity_rows("$label0.gene_id_map.tsv");
+            my $gene_identity = $compact->{gene_identity};
             my @axis_ids = map { $_->{branch_id} } @{$axis};
-            my $state = read_state_matrix("$label0.primitive_state.tsv");
-            my $matrix = read_matrix_table("$label0.matrix_with_fuse.txt");
-            validate_state_for_matrix(
-                state  => $state,
-                matrix => $matrix,
-                axis   => \@axis_ids,
-                role   => "matrix run '$label0'",
-            );
-            my @manifest_genes = map { $_->{gene_id} } @{$gene_identity};
-            verify_text_array_equal(
-                $state->{genes}, \@manifest_genes,
-                "state genes for '$label0'", "gene identity map for '$label0'",
-            );
             my $matrix_with_fuse_sha = file_sha256("$label0.matrix_with_fuse.txt");
             my $manifest = {
                 schema_version => 'SplitAligner-run-manifest-v4',
-                projection_graph => projection_graph_record($label0),
+                projection_graph => projection_graph_record($label0, $compact),
+                fusion_matrix => {
+                    schema_version => 'whole-components-compact-v1',
+                    view => $arg{fusion_view},
+                    cells => "$label0.fusion_cells.tsv",
+                    component_ledger => $compact->{ledger},
+                    source_ledger => $compact->{ledger},
+                    index => $compact->{index}, dictionary => $compact->{dictionary},
+                    source_coordinates => '1-based observation_id in gene hex-key order; source_nodes are zero-based Newick child preorder, root=0; stable input_record_id follows input order',
+                },
+                compact_provenance => {
+                    schema_version => 'SplitAligner-compact-ledger-v1',
+                    files => { map { $_ => {filename => $compact->{$_}, sha256 => $compact->{artifact_sha256}{$_}} } qw(ledger index dictionary) },
+                    limits => $compact->{limits}, tg_cache => 'disabled',
+                    assembly => 'private-materialized-tsv-v1',
+                },
                 mode           => 'matrix',
                 label          => $label0,
                 program        => implementation_identity(),
@@ -305,12 +319,12 @@ sub run_matrix_mode {
                 inputs => {
                     species_tree => {
                         path_as_provided => $species,
-                        sha256           => file_sha256($species_abs),
+                        sha256           => $inputs[0]{sha256},
                     },
                     gene_trees => {
                         path_as_provided => $gene,
-                        sha256           => file_sha256($gene_abs),
-                        record_count     => scalar(@{$gene_records}),
+                        sha256           => $inputs[1]{sha256},
+                        record_count     => $compact->{gene_count},
                     },
                 },
                 gene_identity => $gene_identity,
@@ -321,8 +335,8 @@ sub run_matrix_mode {
                     filename             => "$label0.primitive_state.tsv",
                     sha256               => file_sha256("$label0.primitive_state.tsv"),
                     primitive_axis_sha256 => axis_sha256($axis),
-                    gene_record_count    => $state->{gene_count},
-                    cell_count           => $state->{cell_count},
+                    gene_record_count    => $compact->{gene_count},
+                    cell_count           => $compact->{cell_count},
                     matrix_with_fuse_sha256 => $matrix_with_fuse_sha,
                 },
                 species_artifacts => {
@@ -331,6 +345,10 @@ sub run_matrix_mode {
                     splits_sha256       => file_sha256('species_tree.splits.txt'),
                 },
                 outputs => {
+                    fusion_cells => {
+                        filename => "$label0.fusion_cells.tsv",
+                        sha256 => file_sha256("$label0.fusion_cells.tsv"),
+                    },
                     matrix_no_fuse => {
                         filename => "$label0.matrix_no_fuse.txt",
                         sha256   => file_sha256("$label0.matrix_no_fuse.txt"),
@@ -353,11 +371,19 @@ sub run_matrix_mode {
                 source_root         => $tmp,
                 items               => \@items,
             );
-            write_json_file("$label0.run_manifest.json", $manifest);
+            my %written = map { $compact->{$_} => $compact->{artifact_sha256}{$_} } qw(ledger index dictionary);
+            for my $item (@{$manifest->{ownership}{outputs}}) {
+                next unless exists $written{$item->{relative_path}};
+                die "[ERROR] Compact artifact differs from its write-time seal: $item->{relative_path}.\n"
+                    unless $item->{fingerprint}{sha256} eq delete($written{$item->{relative_path}});
+            }
+            die "[ERROR] Compact artifact is absent from output inventory.\n" if keys %written;
+            $source_inventory = $manifest->{ownership}{outputs};
+            $source_manifest_sha256 = write_json_file("$label0.run_manifest.json", $manifest);
         });
         publish_transaction(
             $tmp, \@items, $arg{force}, \@inputs, \@destinations,
-            $ownership_authorization, $publication_device_guard);
+            $ownership_authorization, $publication_device_guard, $source_inventory, $source_manifest_sha256);
         1;
     };
     my $error = $@;
@@ -376,8 +402,8 @@ sub run_finalize_mode {
     die "[ERROR] --final_label is required in --mode finalize\n" unless defined $final && $final ne '';
     validate_label($final, '--final_label');
 
-    my $free_input = build_input_record(role => 'FREE matrix', path => $free);
-    my $fix_input = build_input_record(role => 'FIX matrix', path => $fix);
+    my $free_input = build_frozen_input(role => 'FREE matrix', path => $free);
+    my $fix_input = build_frozen_input(role => 'FIX matrix', path => $fix);
     my $free_abs = $free_input->{resolved_path};
     my $fix_abs = $fix_input->{resolved_path};
     die "[ERROR] FREE and FIX matrix basenames must differ for transactional finalize mode.\n"
@@ -385,10 +411,10 @@ sub run_finalize_mode {
 
     my ($free_meta, $free_manifest_path, $free_state_abs,
         $free_manifest_input, $free_state_input) = load_and_verify_matrix_manifest(
-        $free_abs, $arg{free_manifest}, 'FREE');
+        $free_input, $arg{free_manifest}, 'FREE');
     my ($fix_meta, $fix_manifest_path, $fix_state_abs,
         $fix_manifest_input, $fix_state_input) = load_and_verify_matrix_manifest(
-        $fix_abs, $arg{fix_manifest}, 'FIX');
+        $fix_input, $arg{fix_manifest}, 'FIX');
     die "[ERROR] FREE and FIX state-sidecar basenames must differ for transactional finalize mode.\n"
         if basename($free_state_abs) eq basename($fix_state_abs);
     verify_axis_equal(
@@ -404,19 +430,19 @@ sub run_finalize_mode {
         $free_manifest_input, $fix_manifest_input,
         $free_state_input, $fix_state_input,
     );
-    my ($species_abs, $branch_map_abs, $support_tree_name);
+    my ($species_abs, $branch_map_abs, $support_tree_name, $species_input, $branch_map_input);
     if (defined $species && $species ne '') {
-        my $species_input = build_input_record(
+        $species_input = build_frozen_input(
             role => 'Support species tree', path => $species);
         $species_abs = $species_input->{resolved_path};
-        my (undef, $support_root) = parse_labeled_species_tree_file($species_abs);
+        my (undef, $support_root) = parse_labeled_species_tree_file($species_input->{snapshot_path});
         my $support_axis = retained_primitive_axis($support_root);
         verify_axis_equal(
             $fix_meta->{axis}{coordinates}, $support_axis,
             "FIX manifest $fix_manifest_path", "Support tree $species_abs",
         );
         $branch_map_abs = derive_existing_branch_map($species_abs);
-        my $branch_map_input = build_input_record(
+        $branch_map_input = build_frozen_input(
             role => 'Support branch map', path => $branch_map_abs);
         $branch_map_abs = $branch_map_input->{resolved_path};
         for my $pair (
@@ -427,9 +453,9 @@ sub run_finalize_mode {
             my $expected_tree = $meta->{species_artifacts}{labeled_tree_sha256} // '';
             my $expected_map  = $meta->{species_artifacts}{branch_map_sha256} // '';
             die "[ERROR] Support tree SHA256 does not match the $role matrix run manifest.\n"
-                unless $expected_tree ne '' && file_sha256($species_abs) eq $expected_tree;
+                unless $expected_tree ne '' && $species_input->{sha256} eq $expected_tree;
             die "[ERROR] Support branch-map SHA256 does not match the $role matrix run manifest.\n"
-                unless $expected_map ne '' && file_sha256($branch_map_abs) eq $expected_map;
+                unless $expected_map ne '' && $branch_map_input->{sha256} eq $expected_map;
         }
         $support_tree_name = support_tree_output_name(basename($species_abs));
         push @inputs, $species_input, $branch_map_input;
@@ -523,19 +549,20 @@ sub run_finalize_mode {
     );
 
     my $tmp = create_workdir($cwd, $final);
+    my ($source_inventory, $source_manifest_sha256);
     my $ok = eval {
-        copy($free_abs, File::Spec->catfile($tmp, basename($free_abs)))
+        copy($free_input->{snapshot_path}, File::Spec->catfile($tmp, basename($free_abs)))
             or die "[ERROR] Cannot stage FREE matrix: $!\n";
-        copy($fix_abs, File::Spec->catfile($tmp, basename($fix_abs)))
+        copy($fix_input->{snapshot_path}, File::Spec->catfile($tmp, basename($fix_abs)))
             or die "[ERROR] Cannot stage FIX matrix: $!\n";
-        copy($free_state_abs, File::Spec->catfile($tmp, basename($free_state_abs)))
+        copy($free_state_input->{snapshot_path}, File::Spec->catfile($tmp, basename($free_state_abs)))
             or die "[ERROR] Cannot stage FREE coordinate state: $!\n";
-        copy($fix_state_abs, File::Spec->catfile($tmp, basename($fix_state_abs)))
+        copy($fix_state_input->{snapshot_path}, File::Spec->catfile($tmp, basename($fix_state_abs)))
             or die "[ERROR] Cannot stage FIX coordinate state: $!\n";
         if ($species_abs) {
-            copy($species_abs, File::Spec->catfile($tmp, basename($species_abs)))
+            copy($species_input->{snapshot_path}, File::Spec->catfile($tmp, basename($species_abs)))
                 or die "[ERROR] Cannot stage species tree: $!\n";
-            copy($branch_map_abs, File::Spec->catfile($tmp, basename($branch_map_abs)))
+            copy($branch_map_input->{snapshot_path}, File::Spec->catfile($tmp, basename($branch_map_abs)))
                 or die "[ERROR] Cannot stage species branch map: $!\n";
         }
 
@@ -554,7 +581,7 @@ sub run_finalize_mode {
             for my $kind (qw(primitive_truth projected_groups)) {
                 my ($fh, $path) = tempfile('.projection-XXXXXXXX', DIR => $tmp);
                 close $fh or die "[ERROR] Cannot close staged graph file: $!\n";
-                copy($graph->{$kind}{resolved_path}, $path) or die "[ERROR] Cannot stage $role $kind: $!\n";
+                copy($graph->{$kind}{snapshot_path}, $path) or die "[ERROR] Cannot stage $role $kind: $!\n";
                 die "[ERROR] Staged $role $kind differs from its run manifest.\n"
                     unless file_sha256($path) eq $meta->{projection_graph}{$kind}{sha256};
                 my $option = $kind eq 'primitive_truth' ? 'truth' : 'groups';
@@ -603,8 +630,8 @@ sub run_finalize_mode {
                 inputs => {
                     free_matrix_sha256   => file_sha256(basename($free_abs)),
                     fix_matrix_sha256    => file_sha256(basename($fix_abs)),
-                    free_manifest_sha256 => file_sha256($free_manifest_path),
-                    fix_manifest_sha256  => file_sha256($fix_manifest_path),
+                    free_manifest_sha256 => $free_manifest_input->{sha256},
+                    fix_manifest_sha256  => $fix_manifest_input->{sha256},
                     free_state_sha256    => file_sha256(basename($free_state_abs)),
                     fix_state_sha256     => file_sha256(basename($fix_state_abs)),
                     state_schema_version => state_schema_version(),
@@ -619,11 +646,12 @@ sub run_finalize_mode {
                 source_root         => $tmp,
                 items               => \@items,
             );
-            write_json_file("$final.finalize_manifest.json", $manifest);
+            $source_inventory = $manifest->{ownership}{outputs};
+            $source_manifest_sha256 = write_json_file("$final.finalize_manifest.json", $manifest);
         });
         publish_transaction(
             $tmp, \@items, $arg{force}, \@inputs, \@destinations,
-            $ownership_authorization, $publication_device_guard);
+            $ownership_authorization, $publication_device_guard, $source_inventory, $source_manifest_sha256);
         1;
     };
     my $error = $@;
@@ -639,11 +667,11 @@ sub run_finalize_fix_mode {
     die "[ERROR] --final_label is required in --mode finalize_fix\n" unless defined $final && $final ne '';
     validate_label($final, '--final_label');
 
-    my $fix_input = build_input_record(role => 'FIX matrix', path => $fix);
+    my $fix_input = build_frozen_input(role => 'FIX matrix', path => $fix);
     my $fix_abs = $fix_input->{resolved_path};
     my ($fix_meta, $fix_manifest_path, $fix_state_abs,
         $fix_manifest_input, $fix_state_input) = load_and_verify_matrix_manifest(
-        $fix_abs, $arg{fix_manifest}, 'FIX');
+        $fix_input, $arg{fix_manifest}, 'FIX');
     my @inputs = ($fix_input, $fix_manifest_input, $fix_state_input);
 
     my $cwd = getcwd_utf8();
@@ -695,10 +723,11 @@ sub run_finalize_fix_mode {
     );
 
     my $tmp = create_workdir($cwd, $final);
+    my ($source_inventory, $source_manifest_sha256);
     my $ok = eval {
-        copy($fix_abs, File::Spec->catfile($tmp, basename($fix_abs)))
+        copy($fix_input->{snapshot_path}, File::Spec->catfile($tmp, basename($fix_abs)))
             or die "[ERROR] Cannot stage FIX matrix: $!\n";
-        copy($fix_state_abs, File::Spec->catfile($tmp, basename($fix_state_abs)))
+        copy($fix_state_input->{snapshot_path}, File::Spec->catfile($tmp, basename($fix_state_abs)))
             or die "[ERROR] Cannot stage FIX coordinate state: $!\n";
         in_directory($tmp, sub {
             run_perl_script('extract_na_fuse.pl', [
@@ -718,7 +747,7 @@ sub run_finalize_fix_mode {
                 primitive_axis_sha256 => $fix_meta->{axis}{sha256},
                 inputs => {
                     fix_matrix_sha256   => file_sha256(basename($fix_abs)),
-                    fix_manifest_sha256 => file_sha256($fix_manifest_path),
+                    fix_manifest_sha256 => $fix_manifest_input->{sha256},
                     fix_state_sha256    => file_sha256(basename($fix_state_abs)),
                     state_schema_version => state_schema_version(),
                 },
@@ -738,11 +767,12 @@ sub run_finalize_fix_mode {
                 source_root         => $tmp,
                 items               => \@items,
             );
-            write_json_file("$final.finalize_manifest.json", $manifest);
+            $source_inventory = $manifest->{ownership}{outputs};
+            $source_manifest_sha256 = write_json_file("$final.finalize_manifest.json", $manifest);
         });
         publish_transaction(
             $tmp, \@items, $arg{force}, \@inputs, \@destinations,
-            $ownership_authorization, $publication_device_guard);
+            $ownership_authorization, $publication_device_guard, $source_inventory, $source_manifest_sha256);
         1;
     };
     my $error = $@;
@@ -765,11 +795,16 @@ sub run_perl_script {
 
 # The reference axis and both graph artifacts belong to the same matrix run.
 sub projection_graph_record {
-    my ($label) = @_;
+    my ($label, $compact) = @_;
     my %graph = (schema_version => 'SplitAligner-projection-graph-v1');
     for my $kind (qw(primitive_truth projected_groups)) {
         my $path = File::Spec->catfile("${label}_split_branch_label", "$label.$kind.tsv");
         $graph{$kind} = { filename => $path, sha256 => file_sha256($path) };
+    }
+    if ($compact) {
+        $graph{primitive_counts} = $compact->{primitive_counts};
+        $graph{fused_group_counts} = $compact->{fused_group_counts};
+        return \%graph;
     }
     my $truth = read_matrix_table($graph{primitive_truth}{filename});
     my %primitive = map { $_ => 0 } qw(Mapped NA_struct NA_fuse not_displayed);
@@ -805,7 +840,7 @@ sub load_projection_graph {
         my $record = $graph->{$kind};
         die "[ERROR] Incomplete $role $kind record in $manifest_path.\n"
             unless ref($record) eq 'HASH' && ($record->{filename} // '') eq $filename;
-        my $input = build_input_record(role => "$role $kind", path => File::Spec->catfile(dirname($manifest_path), $filename));
+        my $input = build_frozen_input(role => "$role $kind", path => File::Spec->catfile(dirname($manifest_path), $filename));
         die "[ERROR] $role $kind differs from its run manifest.\n"
             unless $input->{sha256} eq ($record->{sha256} // '');
         $inputs{$kind} = $input;
@@ -814,7 +849,8 @@ sub load_projection_graph {
 }
 
 sub load_and_verify_matrix_manifest {
-    my ($matrix_path, $explicit_manifest, $role) = @_;
+    my ($matrix_input, $explicit_manifest, $role) = @_;
+    my $matrix_path = $matrix_input->{resolved_path};
     my $manifest_path = $explicit_manifest;
     if (!defined $manifest_path || $manifest_path eq '') {
         my $file = basename($matrix_path);
@@ -822,10 +858,10 @@ sub load_and_verify_matrix_manifest {
             unless $file =~ /\A(.+)\.matrix_with_fuse\.txt\z/;
         $manifest_path = File::Spec->catfile(dirname($matrix_path), "$1.run_manifest.json");
     }
-    my $manifest_input = build_input_record(
+    my $manifest_input = build_frozen_input(
         role => "$role run manifest", path => $manifest_path);
     $manifest_path = $manifest_input->{resolved_path};
-    my $manifest = read_json_file($manifest_path);
+    my $manifest = read_json_file($manifest_input->{snapshot_path});
     my $schema = $manifest->{schema_version} // '';
     if ($schema eq 'SplitAligner-run-manifest-v2') {
         die "[ERROR] $role matrix was generated without coordinate-state provenance. Regenerate it with the repaired SplitAligner matrix mode before finalization.\n";
@@ -842,7 +878,7 @@ sub load_and_verify_matrix_manifest {
         unless $computed_axis_sha eq ($manifest->{axis}{sha256} // '');
     my $expected_matrix_sha = $manifest->{outputs}{matrix_with_fuse}{sha256} // '';
     die "[ERROR] $role matrix SHA256 does not match its run manifest: $matrix_path\n"
-        unless $expected_matrix_sha ne '' && file_sha256($matrix_path) eq $expected_matrix_sha;
+        unless $expected_matrix_sha ne '' && $matrix_input->{sha256} eq $expected_matrix_sha;
 
     my $state_meta = $manifest->{coordinate_state};
     die "[ERROR] $role manifest has no coordinate-state provenance. Regenerate the matrix run.\n"
@@ -859,20 +895,20 @@ sub load_and_verify_matrix_manifest {
         unless $state_filename ne '' && basename($state_filename) eq $state_filename
             && $state_filename !~ /[\\\/\x00-\x1f]/;
     my $state_path = File::Spec->catfile(dirname($manifest_path), $state_filename);
-    my $state_input = build_input_record(
+    my $state_input = build_frozen_input(
         role => "$role coordinate-state sidecar", path => $state_path);
     $state_path = $state_input->{resolved_path};
     die "[ERROR] $role coordinate-state SHA256 does not match its run manifest.\n"
         unless ($state_meta->{sha256} // '') ne ''
-            && file_sha256($state_path) eq $state_meta->{sha256};
+            && $state_input->{sha256} eq $state_meta->{sha256};
     die "[ERROR] $role coordinate-state output record is inconsistent with coordinate_state metadata.\n"
         unless ref($manifest->{outputs}{primitive_state}) eq 'HASH'
             && ($manifest->{outputs}{primitive_state}{filename} // '') eq $state_filename
             && ($manifest->{outputs}{primitive_state}{sha256} // '') eq $state_meta->{sha256};
 
     my @axis_ids = map { $_->{branch_id} } @{$manifest->{axis}{coordinates}};
-    my $state = read_state_matrix($state_path);
-    my $matrix = read_matrix_table($matrix_path);
+    my $state = read_state_matrix($state_input->{snapshot_path});
+    my $matrix = read_matrix_table($matrix_input->{snapshot_path});
     validate_state_for_matrix(
         state  => $state,
         matrix => $matrix,
@@ -943,13 +979,18 @@ sub implementation_identity {
         'lib/SplitAligner/Newick.pm',
         'lib/SplitAligner/Provenance.pm',
         'lib/SplitAligner/TextIO.pm',
+        'lib/SplitAligner/Platform.pm',
         'lib/SplitAligner/CoordinateState.pm',
         'lib/SplitAligner/IOSafety.pm',
         'lib/SplitAligner/OutputOwnership.pm',
+        'lib/SplitAligner/CompactKernel.pm',
+        'lib/SplitAligner/Bitset.pm',
+        'lib/SplitAligner/CompactPipeline.pm',
+        'lib/SplitAligner/MaterializedSpool.pm',
         map { "scripts/$_" } qw(
             label_species_tree.pl tree_to_splits.pl split_branch_label.pl
             generate_branch_matrix.pl extract_na_fuse.pl confirm_na_structure.pl
-            classify_fix_missingness.pl
+            classify_fix_missingness.pl audit_compact_gene.pl
         ),
     ) {
         my $path = File::Spec->catfile($program_root, split('/', $relative));
@@ -957,6 +998,8 @@ sub implementation_identity {
     }
     return {
         name                => 'SplitAligner',
+        candidate_version   => '2.0.0-rc.1',
+        scientific_base_commit => '21e397ada04702330f4b90842197461e1108eb88',
         frozen_base_version => 'v1.2.0',
         frozen_base_commit  => '4337e2cb62ac24238246893e85e3d2a5a51c8a7a',
         repair_contract     => 'RECERT-BlockerRepair-20260716+UTF8PathClosure-20260717+IOAliasClosure-20260718+OutputOwnershipClosure-20260718+CrossDevicePreflightClosure-20260718+PublicationParentDeviceClosure-20260718+POSIXInputResolutionClosure-20260719+StrictPOSIXInputLookupClosure-20260719',
@@ -974,7 +1017,7 @@ sub derive_existing_branch_map {
     }
     push @candidate, File::Spec->catfile($dir, 'species_tree.branch_map.txt');
     for my $path (@candidate) {
-        # Return the derived path as provided. build_input_record() performs
+        # Return the derived path as provided. build_frozen_input() performs
         # OS-level resolution and retains this path for retarget detection.
         return $path if -e $path || -l $path;
     }
@@ -986,6 +1029,26 @@ sub support_tree_output_name {
     $name =~ s/\.forSplit\.nwk\z/.support_b.nwk/ and return $name;
     $name =~ s/\.nwk\z/.support_b.nwk/ and return $name;
     return $name . '.support_b.nwk';
+}
+
+# Hash and parse the same private bytes. Original paths stay in the I/O registry
+# so persistent edits, symlink retargeting and input/output aliases still fail.
+# The private directory is removed by File::Temp on success and on exceptions.
+sub build_frozen_input {
+    if (!defined $input_snapshot_root) {
+        $input_snapshot_root = decode_filesystem_path_utf8(
+            tempdir('.splitaligner-inputs-XXXXXXXX', TMPDIR => 1, CLEANUP => 1),
+            'private input snapshot directory');
+    }
+    my ($fh, $path) = tempfile('input-XXXXXXXX', DIR => $input_snapshot_root);
+    close $fh or die "[ERROR] Cannot close private input snapshot: $!\n";
+    $path = decode_filesystem_path_utf8($path, 'private input snapshot');
+    my $input = build_input_record(@_, snapshot_path => $path);
+    die "[ERROR] Private snapshot differs from hashed input for $input->{role}: $input->{resolved_path}\n"
+        unless file_sha256($path) eq $input->{sha256};
+    protect_private_input($path);
+    $input->{snapshot_path} = $path;
+    return $input;
 }
 
 sub create_workdir {
@@ -1007,7 +1070,7 @@ sub in_directory {
 
 sub publish_transaction {
     my ($tmp, $items, $force0, $inputs, $destinations, $authorization,
-        $publication_device_guard) = @_;
+        $publication_device_guard, $source_inventory, $source_manifest_sha256) = @_;
     verify_input_snapshots($inputs);
     assert_io_namespaces_disjoint(
         inputs       => $inputs,
@@ -1018,6 +1081,8 @@ sub publish_transaction {
         items         => $items,
         force         => $force0,
         authorization => $authorization,
+        source_inventory => $source_inventory,
+        source_manifest_sha256 => $source_manifest_sha256,
     );
     verify_publication_plan($plan);
     my @publish = grep { $_->{action} ne 'reuse' } @{$plan->{items}};
@@ -1049,8 +1114,10 @@ sub publish_transaction {
                 my $backup_path = File::Spec->catfile($backup, sprintf('%06d', ++$index));
                 rename($destination, $backup_path)
                     or die "[ERROR] Cannot stage existing output for rollback: $destination: $!\n";
+                # Register the move before verification can fail (E10).
+                push @backed_up, [$backup_path, $destination,
+                    $item->{type}, $item->{existing_snapshot}];
                 verify_staged_replacement($item, $backup_path);
-                push @backed_up, [$backup_path, $destination];
             } elsif (path_exists($destination)) {
                 die "[ERROR][Output ownership] An unowned destination appeared "
                     . "during publication for role '$item->{role}': "
@@ -1058,11 +1125,12 @@ sub publish_transaction {
             }
             rename($item->{source_abs}, $destination)
                 or die "[ERROR] Cannot publish $item->{source_abs} to $destination: $!\n";
+            # A failed post-install comparison must still enter rollback (P5).
+            push @installed, [$destination, $item->{type}, $item->{source_snapshot}];
             die "[ERROR] Published output differs from its generated source "
                 . "snapshot for role '$item->{role}': $destination.\n"
                 unless object_matches_snapshot(
                     $destination, $item->{type}, $item->{source_snapshot});
-            push @installed, [$destination, $item->{type}, $item->{source_snapshot}];
             die "[ERROR][Internal test] Injected late publication failure.\n"
                 if defined $fail_after && @installed == $fail_after;
         }
@@ -1083,16 +1151,29 @@ sub publish_transaction {
             }
         }
         for my $pair (reverse @backed_up) {
+            unless (object_matches_snapshot($pair->[0], $pair->[2], $pair->[3])) {
+                push @rollback_error,
+                    "[ERROR] Rollback backup differs from its authorized snapshot; "
+                    . "recovery material was preserved: $pair->[0] -> $pair->[1]\n";
+                next;
+            }
             if (path_exists($pair->[1])) {
                 push @rollback_error,
-                    "[ERROR] Rollback destination is occupied and was preserved: $pair->[1]\n";
+                    "[ERROR] Rollback destination is occupied and was preserved: "
+                    . "$pair->[1]; prior output retained for recovery at $pair->[0]\n";
                 next;
             }
             rename($pair->[0], $pair->[1])
                 or push @rollback_error,
                     "[ERROR] Rollback failed for $pair->[1]: $!\n";
         }
-        remove_tree($backup) if -d $backup;
+        # Never recursively discard an old output after an incomplete rollback.
+        # rmdir succeeds only after all backups have safely left this directory.
+        if (-d $backup && !rmdir($backup)) {
+            push @rollback_error,
+                "[ERROR] Transaction recovery directory retained: $backup. "
+                . "It was not recursively deleted.\n";
+        }
         die $error . join('', @rollback_error);
     }
     remove_tree($backup) if -d $backup;
@@ -1147,9 +1228,22 @@ sub validate_matrix_label {
 sub usage {
     return <<'USAGE';
 Usage:
-  SplitAligner.pl --mode matrix --species <species.nwk> --gene <genes.nwk> --label <label> [--force]
+  SplitAligner.pl --mode matrix --species <species.nwk> --gene <genes.nwk> --label <label> [--fusion-view whole|direct] [--force]
   SplitAligner.pl --mode finalize --free <free.matrix_with_fuse.txt> --fix <fix.matrix_with_fuse.txt> --final_label <prefix> [--species_tree <species_tree.forSplit.nwk>] [--free_manifest <json>] [--fix_manifest <json>] [--force]
   SplitAligner.pl --mode finalize_fix --fix <fix.matrix_with_fuse.txt> --final_label <prefix> [--fix_manifest <json>] [--force]
+
+Matrix output and migration (Perl v2):
+  - whole (default) allows sums of complete recovered components; direct keeps
+    measurements from one normalized observation. Both views retain the same
+    primitive states and recovery records.
+  - Matrix runs write the scientific tables plus <label>.taxon_dictionary.json,
+    <label>.compact.jsonl and <label>.compact.index.json for source auditing.
+    Per-gene split/component/source-node files are not generated by default.
+  - Audit a selected gene with scripts/audit_compact_gene.pl --manifest
+    <label>.run_manifest.json --audit-gene <ID>. Keep the original tree inputs.
+  - Use a new directory or label when upgrading from v1. --force does not
+    convert or overwrite the old per-gene output layout.
+  - See docs/perl-v2-compact.md for the output layout and audit examples.
 
 Safety and provenance:
   - Every input and publication destination is registered before work begins;

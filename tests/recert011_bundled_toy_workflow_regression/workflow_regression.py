@@ -61,6 +61,8 @@ def compare_expected(root: Path) -> None:
     if len(expected) != 12:
         fail(f"expected fixture count is {len(expected)}, not 12")
     for reference in expected:
+        if reference.name.endswith(".matrix_with_fuse.txt"):
+            reference = expected_dir / "whole-components-v1" / reference.name
         actual = run_dir / reference.name
         if not actual.is_file() or digest(actual) != digest(reference):
             fail(f"toy output differs from expected: {reference.name}")

@@ -127,6 +127,8 @@ def assert_expected_outputs(checkout: Path) -> None:
     if len(references) != 12:
         fail(f"expected fixture count is {len(references)}, not 12")
     for reference in references:
+        if reference.name.endswith(".matrix_with_fuse.txt"):
+            reference = expected_dir / "whole-components-v1" / reference.name
         actual = run_dir / reference.name
         if not actual.is_file() or digest(actual) != digest(reference):
             fail(f"toy output differs from expected: {reference.name}")

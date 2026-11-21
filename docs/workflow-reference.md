@@ -356,6 +356,7 @@ Required arguments:
 - `--species`: species tree in Newick format
 - `--gene`: gene-tree file in SplitAligner line-based format
 - `--label`: output label or prefix, for example `free` or `fix`
+- `--fusion-view whole|direct`: `whole` (default) sums complete recovered components that cover a shared group exactly. Use `direct` to report lengths only for groups that form a single measured branch in that gene. The per-cell provenance and [source edge ledgers](io_spec.md) distinguish the two constructions.
 - `species_tree` is reserved and cannot be used as a matrix `--label`, because it names the common species-tree artifact namespace
 - `--force`: optional transactional replacement of an intact, ownership-verified prior run
 
@@ -387,6 +388,7 @@ Main outputs:
 - `<label>_split_branch_label/`
 - `<label>.matrix_no_fuse.txt`
 - `<label>.matrix_with_fuse.txt`
+- `<label>.fusion_cells.tsv`
 - `<label>.primitive_axis.tsv`
 - `<label>.gene_id_map.tsv`
 - `<label>.primitive_state.tsv`
@@ -579,6 +581,7 @@ GeneC((A:0.1,B:0.2):0.2,(C:0.1,D:0.1):0.4):0.1;
 - `<label>.matrix_no_fuse.txt`
   - primitive-branch matrix only
 - `<label>.matrix_with_fuse.txt`
+- `<label>.fusion_cells.tsv`
   - primitive branches plus fused-branch columns
 - `<label>.primitive_axis.tsv`
   - label-specific ordered `B`-alias to canonical-split ledger

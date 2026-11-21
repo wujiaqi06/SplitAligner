@@ -2,6 +2,7 @@
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,10 +13,12 @@ import unittest
 class QuartetExample(unittest.TestCase):
     def test_reference_and_changed_internal_edge(self):
         cli = sys.argv[1]
-        example = Path(__file__).resolve().parents[1] / "examples" / "quickstart.sh"
+        examples = Path(__file__).resolve().parents[1] / "examples"
+        command = ([sys.executable, "-I", "-B", str(examples / "quickstart.py")]
+                   if os.name == "nt" else [str(examples / "quickstart.sh")])
         with TemporaryDirectory() as tmp:
             out = Path(tmp) / "quartet"
-            subprocess.run([str(example), cli, str(out)], check=True)
+            subprocess.run([*command, cli, str(out)], check=True)
             context = json.loads((out / "context.json").read_text())
             internal, = [axis["id"] for axis in context["axes"] if not axis["terminal"]]
             column = "A{}".format(internal)

@@ -10,8 +10,8 @@ authors:
 repository-code: "https://github.com/wujiaqi06/SplitAligner"
 url: "https://github.com/wujiaqi06/SplitAligner"
 license: "MIT"
-version: "v1.2.0"
-date-released: "2026-05-14"
+version: "v2.0.0-rc.1"
+date-released: "2026-11-21"
 preferred-citation:
   type: article
   authors:

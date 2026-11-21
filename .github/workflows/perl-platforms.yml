@@ -1,0 +1,73 @@
+name: Perl platform checks
+
+on:
+  push:
+    branches: [main]
+    tags: ['v2.*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  perl:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+          distribution: strawberry
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Record Perl environment
+        run: perl -V
+      - name: Portable regressions and publication guards
+        if: runner.os != 'Windows'
+        env:
+          LC_ALL: C
+        run: |
+          prove -v tests/windows_platform/run.pl tests/compact_kernel/run.pl tests/materialized_spool/run.pl tests/materialized_spool/utf8_bytes.pl
+          publication_parent="$(python -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_TEMP")"
+          perl tests/compact_publication/run.pl "$publication_parent/perl-publication"
+          python tests/windows_platform/smoke.py --work-dir "$RUNNER_TEMP/perl-smoke"
+          python tests/compact_diagnostics/run.py --work-dir "$RUNNER_TEMP/perl-diagnostics"
+      - name: Native Windows checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tests/windows_platform/run-native.ps1 -WorkDir "$env:RUNNER_TEMP/perl-native"
+          # Match the native runner's bounded filesystem environment. The
+          # default Windows TEMP can have unsupported alias/path spellings.
+          $DiagnosticScratch = Join-Path $env:RUNNER_TEMP 'perl-diagnostics-temp'
+          if (Test-Path -LiteralPath $DiagnosticScratch) { throw 'Use a fresh diagnostic scratch directory.' }
+          New-Item -ItemType Directory -Path $DiagnosticScratch | Out-Null
+          $DiagnosticScratch = (Resolve-Path -LiteralPath $DiagnosticScratch).Path
+          $PreviousTemp = $env:TEMP; $PreviousTmp = $env:TMP; $PreviousTmpdir = $env:TMPDIR
+          try {
+            $env:TEMP = $DiagnosticScratch; $env:TMP = $DiagnosticScratch; $env:TMPDIR = $DiagnosticScratch
+            python ./tests/compact_diagnostics/run.py --work-dir "$env:RUNNER_TEMP/perl-diagnostics"
+            if ($LASTEXITCODE -ne 0) { throw 'Gene diagnostic regression failed; retain case stderr for the actual reason.' }
+          } finally {
+            $env:TEMP = $PreviousTemp; $env:TMP = $PreviousTmp; $env:TMPDIR = $PreviousTmpdir
+          }
+      - name: Retain native Windows evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: perl-windows-evidence
+          path: |
+            ${{ runner.temp }}/perl-native/*.log
+            ${{ runner.temp }}/perl-native/RESULT*
+            ${{ runner.temp }}/perl-native/smoke space/RESULTS.json
+            ${{ runner.temp }}/perl-diagnostics/RESULTS.json
+            ${{ runner.temp }}/perl-diagnostics/*/stderr.log
+            ${{ runner.temp }}/perl-diagnostics/*/stdout.log
+            ${{ runner.temp }}/perl-diagnostics/*/COMMAND.json
